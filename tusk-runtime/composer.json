@@ -1,0 +1,16 @@
+{
+    "name": "tusk/runtime",
+    "description": "Tusk Framework - Persistent Process Runner",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "tusk/contracts": "self.version",
+        "tusk/core": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "Tusk\\Runtime\\": "src/"
+        }
+    }
+}

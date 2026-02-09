@@ -1,0 +1,15 @@
+{
+    "name": "tusk/security",
+    "description": "Tusk Framework - Security and Authentication Toolkit",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "tusk/contracts": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "Tusk\\Security\\": "src/"
+        }
+    }
+}

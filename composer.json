@@ -1,31 +1,57 @@
 {
-  "name": "tusk/framework",
-  "description": "TUSK Framework – Domain-first PHP application framework",
-  "type": "library",
-  "license": "MIT",
-  "require": {
-    "php": "^8.2",
-    "tusk/core": "^0.1",
-    "tusk/runtime": "^0.1",
-    "tusk/web": "^0.1",
-    "tusk/data": "^0.1",
-    "tusk/micro": "^0.1",
-    "tusk/cli": "^0.1"
-  },
-  "suggest": {
-    "tusk/messaging": "Async messaging and event handling",
-    "tusk/security": "Authentication and authorization"
-  },
-  "autoload": {
-    "psr-4": {
-      "Tusk\\": "src/"
-    }
-  },
-  "authors": [
-    {
-      "name": "Tusk Contributors"
-    }
-  ],
-  "minimum-stability": "dev",
-  "prefer-stable": true
+    "name": "tusk/framework",
+    "description": "The Tusk Framework - Domain-first PHP application framework",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "framework",
+        "php",
+        "tusk",
+        "router",
+        "container",
+        "microservices"
+    ],
+    "require": {
+        "php": "^8.2"
+    },
+    "bin": [
+        "bin/tusk"
+    ],
+    "require-dev": {
+        "phpunit/phpunit": "^10.0",
+        "symfony/var-dumper": "^6.0"
+    },
+    "autoload": {
+        "files": [
+            "src/functions.php"
+        ],
+        "psr-4": {
+            "Tusk\\Core\\": "tusk-core/src/",
+            "Tusk\\Web\\": "tusk-web/src/",
+            "Tusk\\Data\\": "tusk-data/src/",
+            "Tusk\\Runtime\\": "tusk-runtime/src/",
+            "Tusk\\Contracts\\": "tusk-contracts/src/",
+            "Tusk\\Cloud\\": "tusk-cloud/src/",
+            "Tusk\\Security\\": "tusk-security/src/",
+            "Tusk\\Validation\\": "tusk-validation/src/",
+            "Tusk\\Events\\": "tusk-events/src/",
+            "Tusk\\Config\\": "tusk-config/src/",
+            "Tusk\\Cli\\": "tusk-cli/src/"
+        }
+    },
+    "replace": {
+        "tusk/core": "self.version",
+        "tusk/web": "self.version",
+        "tusk/data": "self.version",
+        "tusk/runtime": "self.version",
+        "tusk/contracts": "self.version",
+        "tusk/cloud": "self.version",
+        "tusk/security": "self.version",
+        "tusk/validation": "self.version",
+        "tusk/events": "self.version",
+        "tusk/config": "self.version",
+        "tusk/cli": "self.version"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
 }

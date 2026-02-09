@@ -1,0 +1,15 @@
+{
+    "name": "tusk/cloud",
+    "description": "Tusk Framework - Cloud Native Distributed Systems Toolkit",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "tusk/contracts": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "Tusk\\Cloud\\": "src/"
+        }
+    }
+}

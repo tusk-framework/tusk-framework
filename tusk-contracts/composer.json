@@ -1,0 +1,14 @@
+{
+    "name": "tusk/contracts",
+    "description": "Tusk Framework - Core Interfaces and Contracts",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "Tusk\\Contracts\\": "src/"
+        }
+    }
+}

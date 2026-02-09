@@ -1,0 +1,20 @@
+{
+    "name": "tusk/core",
+    "description": "Tusk Framework - Core IoC Container and Lifecycle Management",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "tusk/contracts": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "Tusk\\Core\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tusk\\Core\\Tests\\": "tests/"
+        }
+    }
+}

@@ -1,0 +1,21 @@
+{
+    "name": "tusk/data",
+    "description": "Tusk Framework - Data Access Layer",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "tusk/contracts": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "Tusk\\Data\\": "src/"
+        }
+    },
+    "suggest": {
+        "ext-pdo": "*",
+        "ext-pdo_mysql": "*",
+        "ext-pdo_pgsql": "*",
+        "ext-pdo_sqlite": "*"
+    }
+}
