@@ -1,0 +1,31 @@
+{
+  "name": "tusk/framework",
+  "description": "TUSK Framework – Domain-first PHP application framework",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": "^8.2",
+    "tusk/core": "^0.1",
+    "tusk/runtime": "^0.1",
+    "tusk/web": "^0.1",
+    "tusk/data": "^0.1",
+    "tusk/micro": "^0.1",
+    "tusk/cli": "^0.1"
+  },
+  "suggest": {
+    "tusk/messaging": "Async messaging and event handling",
+    "tusk/security": "Authentication and authorization"
+  },
+  "autoload": {
+    "psr-4": {
+      "Tusk\\": "src/"
+    }
+  },
+  "authors": [
+    {
+      "name": "Tusk Contributors"
+    }
+  ],
+  "minimum-stability": "dev",
+  "prefer-stable": true
+}
