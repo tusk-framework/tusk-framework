@@ -69,6 +69,26 @@ class Container implements ContainerInterface
     }
 
     /**
+     * Set definitions and scopes manually (e.g., from a cache file).
+     */
+    public function setDefinitions(array $definitions, array $scopes): void
+    {
+        $this->definitions = $definitions;
+        $this->scopes = $scopes;
+    }
+
+    /**
+     * Exports the current definitions and scopes.
+     */
+    public function export(): array
+    {
+        return [
+            'definitions' => $this->definitions,
+            'scopes' => $this->scopes
+        ];
+    }
+
+    /**
      * Resets all services within a specific scope.
      * Useful for clearing 'worker' scoped services after a fork.
      */
