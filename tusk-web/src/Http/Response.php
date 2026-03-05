@@ -15,8 +15,10 @@ class Response
     {
         http_response_code($this->statusCode);
 
-        foreach ($this->headers as $name => $value) {
-            header("{$name}: {$value}");
+        foreach ($this->headers as $name => $values) {
+            foreach ((array)$values as $value) {
+                header("{$name}: {$value}", false);
+            }
         }
 
         echo $this->body;

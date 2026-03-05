@@ -23,7 +23,7 @@
     },
     "autoload": {
         "files": [
-            "src/functions.php"
+            "tusk-web/src/helpers.php"
         ],
         "psr-4": {
             "Tusk\\Core\\": "tusk-core/src/",

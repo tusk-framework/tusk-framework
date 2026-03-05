@@ -23,16 +23,19 @@ class Router
                 $attributes = $method->getAttributes(Route::class);
                 foreach ($attributes as $attribute) {
                     $route = $attribute->newInstance();
-                    $this->addRoute($route->methods, $route->path, [$controller, $method->getName()]);
+                    $this->addRoute($route->methods, $route->path, [$controller, $method->getName()], $route->middleware);
                 }
             }
         }
     }
 
-    public function addRoute(array $methods, string $path, callable|array $handler): void
+    public function addRoute(array $methods, string $path, callable|array $handler, array $middleware = []): void
     {
         foreach ($methods as $method) {
-            $this->routes[strtoupper($method)][$path] = $handler;
+            $this->routes[strtoupper($method)][$path] = [
+                'handler' => $handler,
+                'middleware' => $middleware
+            ];
         }
     }
 
