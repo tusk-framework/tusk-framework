@@ -4,6 +4,8 @@ namespace Tusk\Data\Model;
 
 use JsonSerializable;
 use Tusk\Data\DB;
+use Tusk\Data\Model\Relations\BelongsTo;
+use Tusk\Data\Model\Relations\HasMany;
 use Tusk\Data\Query\Builder;
 
 abstract class Model implements JsonSerializable
@@ -112,12 +114,39 @@ abstract class Model implements JsonSerializable
         return $this->primaryKey;
     }
 
-    protected function newInstance(array $attributes = []): static
+    public function newInstance(array $attributes = []): static
     {
         $model = new static;
         $model->attributes = $attributes;
 
         return $model;
+    }
+
+    protected function hasMany(string $relatedClass, ?string $foreignKey = null, ?string $localKey = null): HasMany
+    {
+        $foreignKey = $foreignKey ?? $this->getForeignKey();
+        $localKey = $localKey ?? $this->getKeyName();
+
+        return new HasMany($this, $relatedClass, $foreignKey, $localKey);
+    }
+
+    protected function belongsTo(string $relatedClass, ?string $foreignKey = null, ?string $ownerKey = null): BelongsTo
+    {
+        if (is_null($foreignKey)) {
+            $class = basename(str_replace('\\', '/', $relatedClass));
+            $foreignKey = strtolower($class).'_id';
+        }
+
+        $ownerKey = $ownerKey ?? 'id';
+
+        return new BelongsTo($this, $relatedClass, $foreignKey, $ownerKey);
+    }
+
+    protected function getForeignKey(): string
+    {
+        $class = basename(str_replace('\\', '/', static::class));
+
+        return strtolower($class).'_id';
     }
 
     public function jsonSerialize(): mixed
