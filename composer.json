@@ -13,7 +13,8 @@
     ],
     "require": {
         "php": "^8.2",
-        "psr/event-dispatcher": "^1.0"
+        "psr/event-dispatcher": "^1.0",
+        "firebase/php-jwt": "^7.0"
     },
     "bin": [
         "bin/tusk"
