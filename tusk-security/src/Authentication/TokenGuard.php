@@ -16,23 +16,22 @@ class TokenGuard implements GuardInterface
         private Request $request,
         private string $inputKey = 'api_token',
         private string $storageKey = 'api_token'
-    ) {
-    }
+    ) {}
 
     public function check(): bool
     {
-        return !is_null($this->user());
+        return ! is_null($this->user());
     }
 
     public function user(): ?UserInterface
     {
-        if (!is_null($this->user)) {
+        if (! is_null($this->user)) {
             return $this->user;
         }
 
         $token = $this->getTokenForRequest();
 
-        if (!empty($token)) {
+        if (! empty($token)) {
             $this->user = $this->provider->loadByIdentifier($token);
         }
 
@@ -47,7 +46,7 @@ class TokenGuard implements GuardInterface
     private function getTokenForRequest(): ?string
     {
         // Try to get token from Authorization header (Bearer)
-        $header = $this->request->headers->get('Authorization');
+        $header = $this->request->header('Authorization');
         if ($header && str_starts_with($header, 'Bearer ')) {
             return substr($header, 7);
         }

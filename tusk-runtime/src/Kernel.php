@@ -2,15 +2,16 @@
 
 namespace Tusk\Runtime;
 
-use Tusk\Contracts\Core\ApplicationInterface;
-use Tusk\Contracts\Container\ContainerInterface;
-use Tusk\Contracts\Attributes\OnStart;
 use Tusk\Contracts\Attributes\OnShutdown;
+use Tusk\Contracts\Attributes\OnStart;
+use Tusk\Contracts\Container\ContainerInterface;
+use Tusk\Contracts\Core\ApplicationInterface;
 use Tusk\Runtime\Supervisor\Supervisor;
 
 class Kernel implements ApplicationInterface
 {
     private bool $running = false;
+
     private Supervisor $supervisor;
 
     public function __construct(
@@ -54,7 +55,7 @@ class Kernel implements ApplicationInterface
 
     public function shutdown(): void
     {
-        if (!$this->running && !empty($this->container)) {
+        if (! $this->running) {
             // ensure hooks run even if start wasn't fully successful
         }
 

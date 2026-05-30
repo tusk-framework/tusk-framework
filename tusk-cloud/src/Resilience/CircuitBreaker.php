@@ -29,7 +29,7 @@ class CircuitBreaker implements CircuitBreakerInterface
                 $data = $this->loadState(); // Refresh after transition
                 $state = $data['state'];
             } else {
-                return $this->handleFailure(new CircuitOpenException(), $fallback);
+                return $this->handleFailure(new CircuitOpenException, $fallback);
             }
         }
 
@@ -43,6 +43,7 @@ class CircuitBreaker implements CircuitBreakerInterface
             return $result;
         } catch (\Throwable $e) {
             $this->recordFailure();
+
             return $this->handleFailure($e, $fallback);
         }
     }
@@ -52,7 +53,7 @@ class CircuitBreaker implements CircuitBreakerInterface
         return $this->store->get($this->key) ?: [
             'state' => State::CLOSED,
             'failureCount' => 0,
-            'lastFailureTime' => null
+            'lastFailureTime' => null,
         ];
     }
 
@@ -71,7 +72,7 @@ class CircuitBreaker implements CircuitBreakerInterface
         $this->saveState([
             'state' => State::OPEN,
             'failureCount' => $this->failureThreshold,
-            'lastFailureTime' => microtime(true)
+            'lastFailureTime' => microtime(true),
         ]);
     }
 
@@ -80,7 +81,7 @@ class CircuitBreaker implements CircuitBreakerInterface
         $this->saveState([
             'state' => State::CLOSED,
             'failureCount' => 0,
-            'lastFailureTime' => null
+            'lastFailureTime' => null,
         ]);
     }
 
@@ -107,6 +108,7 @@ class CircuitBreaker implements CircuitBreakerInterface
         if ($lastFailureTime === null) {
             return false;
         }
+
         return (microtime(true) - $lastFailureTime) > $this->resetTimeout;
     }
 

@@ -16,8 +16,8 @@ interface ContainerInterface
 
     /**
      * Executes lifecycle hooks for all registered services.
-     * 
-     * @param string $attributeClass The FQCN of the attribute (e.g., Tusk\Core\Attributes\OnStart)
+     *
+     * @param  string  $attributeClass  The FQCN of the attribute (e.g., Tusk\Core\Attributes\OnStart)
      */
     public function runHooks(string $attributeClass): void;
 

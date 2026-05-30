@@ -8,8 +8,23 @@ class Request
         public string $method,
         public string $uri,
         public array $headers = [],
-        public string $body = ''
-    ) {
+        public string $body = '',
+        public array $attributes = [],
+        public array $query = [],
+        public array $request = []
+    ) {}
+
+    public function get(string $key, $default = null)
+    {
+        if (array_key_exists($key, $this->request)) {
+            return $this->request[$key];
+        }
+
+        if (array_key_exists($key, $this->query)) {
+            return $this->query[$key];
+        }
+
+        return $default;
     }
 
     public function header(string $name, ?string $default = null): ?string
@@ -20,6 +35,7 @@ class Request
                 return is_array($values) ? implode(', ', $values) : $values;
             }
         }
+
         return $default;
     }
 
@@ -28,9 +44,10 @@ class Request
         $name = strtolower($name);
         foreach ($this->headers as $key => $values) {
             if (strtolower($key) === $name) {
-                return (array)$values;
+                return (array) $values;
             }
         }
+
         return [];
     }
 
@@ -41,6 +58,6 @@ class Request
         $headers = function_exists('getallheaders') ? getallheaders() : [];
         $body = file_get_contents('php://input');
 
-        return new self($method, $uri, $headers, $body);
+        return new self($method, $uri, $headers, $body, [], $_GET, $_POST);
     }
 }

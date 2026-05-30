@@ -2,19 +2,18 @@
 
 namespace Tusk\Cloud\Controller;
 
+use Tusk\Cloud\Health\HealthCheckRegistry;
+use Tusk\Contracts\Attributes\Service;
 use Tusk\Web\Attribute\Route;
 use Tusk\Web\Http\Request;
 use Tusk\Web\Http\Response;
-use Tusk\Cloud\Health\HealthCheckRegistry;
-use Tusk\Contracts\Attributes\Service;
 
 #[Service]
 class HealthController
 {
     public function __construct(
         private HealthCheckRegistry $registry
-    ) {
-    }
+    ) {}
 
     #[Route('/health/live', methods: ['GET'])]
     public function live(Request $request): Response

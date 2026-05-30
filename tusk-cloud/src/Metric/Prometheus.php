@@ -5,11 +5,12 @@ namespace Tusk\Cloud\Metric;
 class Prometheus
 {
     private static array $counters = [];
+
     private static array $gauges = [];
 
     public static function counter(string $name, string $help): void
     {
-        if (!isset(self::$counters[$name])) {
+        if (! isset(self::$counters[$name])) {
             self::$counters[$name] = ['help' => $help, 'value' => 0];
         }
     }
@@ -23,12 +24,13 @@ class Prometheus
 
     public static function render(): string
     {
-        $output = "";
+        $output = '';
         foreach (self::$counters as $name => $data) {
             $output .= "# HELP $name {$data['help']}\n";
             $output .= "# TYPE $name counter\n";
             $output .= "$name {$data['value']}\n";
         }
+
         return $output;
     }
 }

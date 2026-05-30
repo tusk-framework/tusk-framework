@@ -2,9 +2,9 @@
 
 namespace Tusk\Runtime;
 
-use Tusk\Web\HttpKernel;
 use Tusk\Web\Http\Request;
 use Tusk\Web\Http\Response;
+use Tusk\Web\HttpKernel;
 
 class Runner
 {
@@ -25,7 +25,7 @@ class Runner
             }
 
             $reqData = json_decode($line, true);
-            if (!$reqData) {
+            if (! $reqData) {
                 continue;
             }
 
@@ -58,7 +58,7 @@ class Runner
             'body' => (string) $response->body,
         ]);
 
-        fwrite(STDOUT, $payload . "\n");
+        fwrite(STDOUT, $payload."\n");
     }
 
     private function sendError(\Throwable $e): void
@@ -66,9 +66,9 @@ class Runner
         $payload = json_encode([
             'status' => 500,
             'headers' => ['Content-Type' => 'text/plain'],
-            'body' => "Internal Server Error: " . $e->getMessage() . "\n" . $e->getTraceAsString(),
+            'body' => 'Internal Server Error: '.$e->getMessage()."\n".$e->getTraceAsString(),
         ]);
 
-        fwrite(STDOUT, $payload . "\n");
+        fwrite(STDOUT, $payload."\n");
     }
 }

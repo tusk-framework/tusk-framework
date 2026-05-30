@@ -3,11 +3,12 @@
 namespace Tusk\Web;
 
 use Tusk\Contracts\Container\ContainerInterface;
-use Tusk\Web\Http\Request;
-use Tusk\Web\Http\Response;
-use Tusk\Web\Router\Router;
 use Tusk\Contracts\Web\MiddlewareInterface;
 use Tusk\Contracts\Web\RequestHandlerInterface;
+use Tusk\Web\Http\Request;
+use Tusk\Web\Http\ResponsableInterface;
+use Tusk\Web\Http\Response;
+use Tusk\Web\Router\Router;
 
 class HttpKernel
 {
@@ -17,24 +18,25 @@ class HttpKernel
     public function __construct(
         private ContainerInterface $container,
         private Router $router
-    ) {
-    }
+    ) {}
 
     /**
-     * @param class-string<MiddlewareInterface> $middleware
+     * @param  class-string<MiddlewareInterface>  $middleware
      */
     public function prependMiddleware(string $middleware): self
     {
         array_unshift($this->middleware, $middleware);
+
         return $this;
     }
 
     /**
-     * @param class-string<MiddlewareInterface> $middleware
+     * @param  class-string<MiddlewareInterface>  $middleware
      */
     public function pushMiddleware(string $middleware): self
     {
         $this->middleware[] = $middleware;
+
         return $this;
     }
 
@@ -49,17 +51,17 @@ class HttpKernel
         $routeMiddleware = $match ? ($match['middleware'] ?? []) : [];
         $fullMiddlewareStack = array_merge($this->middleware, $routeMiddleware);
 
-        $handler = new class ($this->container, $fullMiddlewareStack, function (Request $request) use ($match) {
+        $handler = new class($this->container, $fullMiddlewareStack, function (Request $request) use ($match) {
             return $this->dispatchToRoute($request, $match);
         }) implements RequestHandlerInterface {
+
             private int $index = 0;
 
             public function __construct(
-            private ContainerInterface $container,
-            private array $middleware,
-            private \Closure $coreHandler
-            ) {
-            }
+                private ContainerInterface $container,
+                private array $middleware,
+                private \Closure $coreHandler
+            ) {}
 
             public function handle(Request $request): Response
             {
@@ -70,7 +72,7 @@ class HttpKernel
                 $middlewareClass = $this->middleware[$this->index];
                 $this->index++;
 
-                /** @var \Tusk\Contracts\Web\MiddlewareInterface $middleware */
+                /** @var MiddlewareInterface $middleware */
                 $middleware = $this->container->get($middlewareClass);
 
                 return $middleware->process($request, $this);
@@ -82,7 +84,7 @@ class HttpKernel
 
     private function dispatchToRoute(Request $request, ?array $match): Response
     {
-        if (!$match) {
+        if (! $match) {
             return new Response(404, [], 'Not Found');
         }
 
@@ -111,13 +113,13 @@ class HttpKernel
                 return new Response(200, ['Content-Type' => 'text/html'], $response);
             }
 
-            if (!$response instanceof Response) {
-                return new Response(500, [], "Controller must return a Response, string, or array.");
+            if (! $response instanceof Response) {
+                return new Response(500, [], 'Controller must return a Response, string, or array.');
             }
 
             return $response;
         }
 
-        return new Response(500, [], "Invalid handler.");
+        return new Response(500, [], 'Invalid handler.');
     }
 }

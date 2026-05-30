@@ -10,6 +10,5 @@ class Can
     public function __construct(
         public string $ability,
         public mixed $subject = null
-    ) {
-    }
+    ) {}
 }

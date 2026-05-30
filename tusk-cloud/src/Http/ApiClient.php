@@ -10,6 +10,5 @@ class ApiClient
     public function __construct(
         public string $serviceId,
         public string $path = ''
-    ) {
-    }
+    ) {}
 }

@@ -6,8 +6,7 @@ class ConsulDiscoveryClient implements DiscoveryClientInterface
 {
     public function __construct(
         private string $consulHost = 'http://localhost:8500'
-    ) {
-    }
+    ) {}
 
     public function getInstances(string $serviceId): array
     {

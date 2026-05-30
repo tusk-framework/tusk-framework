@@ -12,22 +12,24 @@ class RunCommand implements CommandInterface
     {
         $file = $args[0] ?? null;
 
-        if (!$file) {
+        if (! $file) {
             echo "Usage: php tusk run <file>\n";
+
             return 1;
         }
 
         $filePath = realpath($file);
 
-        if (!$filePath || !file_exists($filePath)) {
+        if (! $filePath || ! file_exists($filePath)) {
             echo "File not found: {$file}\n";
+
             return 1;
         }
 
         echo "Tusk Framework v0.1.0\n";
         echo "Starting application: {$file}\n";
 
-        $container = new Container();
+        $container = new Container;
         $kernel = new Kernel($container);
 
         require_once $filePath;

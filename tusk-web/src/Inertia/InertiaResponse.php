@@ -3,8 +3,8 @@
 namespace Tusk\Web\Inertia;
 
 use Tusk\Web\Http\Request;
-use Tusk\Web\Http\Response;
 use Tusk\Web\Http\ResponsableInterface;
+use Tusk\Web\Http\Response;
 
 class InertiaResponse implements ResponsableInterface
 {
@@ -13,8 +13,7 @@ class InertiaResponse implements ResponsableInterface
         private array $props,
         private string $rootView = 'app',
         private ?string $version = null
-    ) {
-    }
+    ) {}
 
     public function toResponse(Request $request): Response
     {
@@ -25,7 +24,7 @@ class InertiaResponse implements ResponsableInterface
             'component' => $this->component,
             'props' => $props,
             'url' => $request->uri,
-            'version' => $version
+            'version' => $version,
         ];
 
         if ($this->isInertiaRequest($request)) {
@@ -34,7 +33,7 @@ class InertiaResponse implements ResponsableInterface
                 headers: [
                     'Vary' => 'Accept',
                     'X-Inertia' => 'true',
-                    'Content-Type' => 'application/json'
+                    'Content-Type' => 'application/json',
                 ],
                 body: json_encode($page)
             );
@@ -54,6 +53,7 @@ class InertiaResponse implements ResponsableInterface
                 return true;
             }
         }
+
         return false;
     }
 
@@ -61,7 +61,7 @@ class InertiaResponse implements ResponsableInterface
     {
         $json = htmlspecialchars(json_encode($page), ENT_QUOTES, 'UTF-8');
 
-        // This is a basic default view. 
+        // This is a basic default view.
         // In a real app, this should load a layout file (e.g. methods to set root view path).
         return <<<HTML
 <!DOCTYPE html>

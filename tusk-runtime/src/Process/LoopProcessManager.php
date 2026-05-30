@@ -8,11 +8,11 @@ class LoopProcessManager implements ProcessManagerInterface
 
     public function spawn(callable $workerLogic): int
     {
-        // On Windows/Non-PCNTL, we can't truly fork. 
+        // On Windows/Non-PCNTL, we can't truly fork.
         // For v0.2.0 verification, we might just run the logic directly (blocking)
         // OR warn that concurrency is not supported.
 
-        // Simulating a "worker" by running it briefly? 
+        // Simulating a "worker" by running it briefly?
         // No, that blocks the supervisor.
 
         echo "[WARNING] Tusk is running in Non-Concurrent Mode (Windows/No PCNTL).\n";

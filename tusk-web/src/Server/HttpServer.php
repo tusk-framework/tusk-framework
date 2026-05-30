@@ -2,9 +2,9 @@
 
 namespace Tusk\Web\Server;
 
-use Tusk\Web\HttpKernel;
 use Tusk\Web\Http\Request;
 use Tusk\Web\Http\Response;
+use Tusk\Web\HttpKernel;
 
 class HttpServer
 {
@@ -14,8 +14,7 @@ class HttpServer
         private HttpKernel $kernel,
         private string $host = '0.0.0.0',
         private int $port = 8000
-    ) {
-    }
+    ) {}
 
     public function start(): void
     {
@@ -30,7 +29,7 @@ class HttpServer
 
         $this->server = stream_socket_server($uri, $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
 
-        if (!$this->server) {
+        if (! $this->server) {
             throw new \RuntimeException("Failed to start server: $errstr ($errno)");
         }
 
@@ -39,14 +38,14 @@ class HttpServer
         // Simple blocking loop for v0.5
         while (true) {
             $conn = @stream_socket_accept($this->server, -1);
-            if (!$conn) {
+            if (! $conn) {
                 continue;
             }
 
             try {
                 $this->handleConnection($conn);
             } catch (\Throwable $e) {
-                error_log("Connection error: " . $e->getMessage());
+                error_log('Connection error: '.$e->getMessage());
             } finally {
                 if (is_resource($conn)) {
                     fclose($conn);
@@ -59,7 +58,7 @@ class HttpServer
     {
         $buffer = '';
         // Read headers
-        while (!feof($conn)) {
+        while (! feof($conn)) {
             $chunk = fread($conn, 1024);
             if ($chunk === false) {
                 return;
@@ -79,7 +78,7 @@ class HttpServer
         try {
             $response = $this->kernel->handle($request);
         } catch (\Throwable $e) {
-            $response = new Response(500, ['Content-Type' => 'text/plain'], "Internal Server Error: " . $e->getMessage());
+            $response = new Response(500, ['Content-Type' => 'text/plain'], 'Internal Server Error: '.$e->getMessage());
         }
 
         $this->sendResponse($conn, $response);
@@ -87,7 +86,7 @@ class HttpServer
 
     private function parseRequest(string $raw): Request
     {
-        list($headerPart, $body) = explode("\r\n\r\n", $raw, 2);
+        [$headerPart, $body] = explode("\r\n\r\n", $raw, 2);
         $lines = explode("\r\n", $headerPart);
         $firstLine = array_shift($lines);
         $parts = explode(' ', $firstLine);
@@ -97,7 +96,7 @@ class HttpServer
         $headers = [];
         foreach ($lines as $line) {
             if (str_contains($line, ': ')) {
-                list($key, $value) = explode(': ', $line, 2);
+                [$key, $value] = explode(': ', $line, 2);
                 $headers[$key] = $value;
             }
         }
@@ -125,11 +124,11 @@ class HttpServer
         }
 
         $body = (string) $response->body;
-        $lines[] = "Content-Length: " . strlen($body);
-        $lines[] = "Connection: close";
-        $lines[] = "";
+        $lines[] = 'Content-Length: '.strlen($body);
+        $lines[] = 'Connection: close';
+        $lines[] = '';
 
-        $output = implode("\r\n", $lines) . "\r\n" . $body;
+        $output = implode("\r\n", $lines)."\r\n".$body;
 
         @fwrite($conn, $output);
     }

@@ -12,14 +12,17 @@
         "microservices"
     ],
     "require": {
-        "php": "^8.2"
+        "php": "^8.2",
+        "psr/event-dispatcher": "^1.0"
     },
     "bin": [
         "bin/tusk"
     ],
     "require-dev": {
         "phpunit/phpunit": "^10.0",
-        "symfony/var-dumper": "^6.0"
+        "symfony/var-dumper": "^6.0",
+        "phpstan/phpstan": "^2.2",
+        "laravel/pint": "^1.29"
     },
     "autoload": {
         "files": [

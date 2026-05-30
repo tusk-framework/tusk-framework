@@ -9,6 +9,5 @@ class Service
 {
     public function __construct(
         public string $scope = 'singleton'
-    ) {
-    }
+    ) {}
 }

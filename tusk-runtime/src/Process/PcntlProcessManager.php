@@ -8,8 +8,8 @@ class PcntlProcessManager implements ProcessManagerInterface
 {
     public function __construct()
     {
-        if (!function_exists('pcntl_fork')) {
-            throw new RuntimeException("PCNTL extension is required for PcntlProcessManager.");
+        if (! function_exists('pcntl_fork')) {
+            throw new RuntimeException('PCNTL extension is required for PcntlProcessManager.');
         }
     }
 
@@ -18,7 +18,7 @@ class PcntlProcessManager implements ProcessManagerInterface
         $pid = pcntl_fork();
 
         if ($pid === -1) {
-            throw new RuntimeException("Failed to fork process.");
+            throw new RuntimeException('Failed to fork process.');
         }
 
         if ($pid > 0) {
@@ -39,6 +39,7 @@ class PcntlProcessManager implements ProcessManagerInterface
     public function wait(): ?int
     {
         $pid = pcntl_wait($status, WNOHANG);
+
         return $pid > 0 ? $pid : null;
     }
 

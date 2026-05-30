@@ -9,6 +9,5 @@ class EventListener
 {
     public function __construct(
         public ?int $priority = 0
-    ) {
-    }
+    ) {}
 }

@@ -2,8 +2,8 @@
 
 namespace Tusk\Security\User;
 
-use Tusk\Security\Contract\UserProviderInterface;
 use Tusk\Security\Contract\UserInterface;
+use Tusk\Security\Contract\UserProviderInterface;
 
 class InMemoryUserProvider implements UserProviderInterface
 {

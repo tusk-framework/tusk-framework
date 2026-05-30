@@ -2,8 +2,8 @@
 
 namespace Tusk\Data\Connection;
 
-use PDO;
 use Closure;
+use PDO;
 
 class Connection implements ConnectionInterface
 {
@@ -12,8 +12,7 @@ class Connection implements ConnectionInterface
         protected string $database = '',
         protected string $tablePrefix = '',
         protected array $config = []
-    ) {
-    }
+    ) {}
 
     public function getPdo(): PDO
     {

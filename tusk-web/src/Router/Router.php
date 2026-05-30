@@ -12,8 +12,8 @@ class Router
 
     /**
      * Scans a list of controller classes and registers their routes.
-     * 
-     * @param string[] $controllers List of FQCNs
+     *
+     * @param  string[]  $controllers  List of FQCNs
      */
     public function registerControllers(array $controllers): void
     {
@@ -34,7 +34,7 @@ class Router
         foreach ($methods as $method) {
             $this->routes[strtoupper($method)][$path] = [
                 'handler' => $handler,
-                'middleware' => $middleware
+                'middleware' => $middleware,
             ];
         }
     }

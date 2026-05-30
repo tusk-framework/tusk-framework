@@ -8,8 +8,7 @@ class Retry
         private int $maxAttempts = 3,
         private int $delayMilliseconds = 100,
         private array $retryableExceptions = [\Throwable::class]
-    ) {
-    }
+    ) {}
 
     public function execute(callable $action): mixed
     {
@@ -21,7 +20,7 @@ class Retry
             } catch (\Throwable $e) {
                 $attempts++;
 
-                if ($attempts >= $this->maxAttempts || !$this->isRetryable($e)) {
+                if ($attempts >= $this->maxAttempts || ! $this->isRetryable($e)) {
                     throw $e;
                 }
 
@@ -37,6 +36,7 @@ class Retry
                 return true;
             }
         }
+
         return false;
     }
 }

@@ -12,8 +12,7 @@ class Gate
 
     public function __construct(
         private GuardInterface $guard
-    ) {
-    }
+    ) {}
 
     public function addVoter(VoterInterface $voter): void
     {
@@ -24,7 +23,7 @@ class Gate
     {
         $user = $this->guard->user();
 
-        if (!$user) {
+        if (! $user) {
             return false;
         }
 
@@ -33,7 +32,7 @@ class Gate
 
     public function denies(string $attribute, mixed $subject = null): bool
     {
-        return !$this->allows($attribute, $subject);
+        return ! $this->allows($attribute, $subject);
     }
 
     private function vote(UserInterface $user, string $attribute, mixed $subject): int
@@ -41,7 +40,7 @@ class Gate
         $grant = VoterInterface::ACCESS_ABSTAIN;
 
         foreach ($this->voters as $voter) {
-            if (!$voter->supports($attribute, $subject)) {
+            if (! $voter->supports($attribute, $subject)) {
                 continue;
             }
 

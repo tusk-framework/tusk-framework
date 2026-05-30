@@ -11,9 +11,9 @@ interface RpcServiceInterface
 
     /**
      * Handle an RPC call.
-     * 
-     * @param string $method The method name being called.
-     * @param mixed $payload The input data (protobuf object or array).
+     *
+     * @param  string  $method  The method name being called.
+     * @param  mixed  $payload  The input data (protobuf object or array).
      * @return mixed The output data.
      */
     public function handle(string $method, mixed $payload): mixed;

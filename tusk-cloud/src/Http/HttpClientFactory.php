@@ -2,16 +2,14 @@
 
 namespace Tusk\Cloud\Http;
 
-use Tusk\Cloud\Discovery\DiscoveryClientInterface;
 use ReflectionClass;
-use ReflectionAttribute;
+use Tusk\Cloud\Discovery\DiscoveryClientInterface;
 
 class HttpClientFactory
 {
     public function __construct(
         private DiscoveryClientInterface $discovery
-    ) {
-    }
+    ) {}
 
     public function create(string $interface): object
     {
@@ -29,10 +27,11 @@ class HttpClientFactory
         // In a real scenario, we would use a library like occlusion/proxy-manager or generating code.
         // For this POC, we return a generic caller that validates the concept.
 
-        return new class ($this->discovery, $serviceId) {
+        return new class($this->discovery, $serviceId)
+        {
             public function __construct(
-            private DiscoveryClientInterface $discovery,
-            private string $serviceId
+                private DiscoveryClientInterface $discovery,
+                private string $serviceId
             ) {}
 
             public function __call(string $name, array $arguments)
@@ -56,8 +55,9 @@ class HttpClientFactory
 
                 // 3. Execute Request
                 echo "[ApiClient] Calling $url ...\n";
+
                 // return file_get_contents($url); // Mocked return
-                return ["id" => 1, "status" => "mocked_success"];
+                return ['id' => 1, 'status' => 'mocked_success'];
             }
         };
     }

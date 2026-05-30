@@ -19,8 +19,9 @@ class InitCommand implements CommandInterface
             }
         }
 
-        if (!$name) {
+        if (! $name) {
             echo "Usage: php tusk init <name> [--type=api|micro]\n";
+
             return 1;
         }
 
@@ -28,7 +29,7 @@ class InitCommand implements CommandInterface
         echo "Type: $type\n";
 
         try {
-            $generator = new ProjectGenerator();
+            $generator = new ProjectGenerator;
             $generator->generate($name, $type);
 
             echo "Project '$name' created successfully!\n";
@@ -38,7 +39,8 @@ class InitCommand implements CommandInterface
 
             return 0;
         } catch (\Exception $e) {
-            echo "Error: " . $e->getMessage() . "\n";
+            echo 'Error: '.$e->getMessage()."\n";
+
             return 1;
         }
     }

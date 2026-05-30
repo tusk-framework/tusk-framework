@@ -12,6 +12,5 @@ class Route
         public array $methods = ['GET'],
         public ?string $name = null,
         public array $middleware = []
-    ) {
-    }
+    ) {}
 }

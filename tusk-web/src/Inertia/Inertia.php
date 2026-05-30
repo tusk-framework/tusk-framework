@@ -5,6 +5,7 @@ namespace Tusk\Web\Inertia;
 class Inertia
 {
     private static array $sharedProps = [];
+
     private static ?string $version = null;
 
     public static function share(string|array $key, mixed $value = null): void

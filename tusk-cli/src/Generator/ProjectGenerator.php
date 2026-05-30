@@ -6,7 +6,7 @@ class ProjectGenerator
 {
     public function generate(string $name, string $type): void
     {
-        $baseDir = getcwd() . '/' . $name;
+        $baseDir = getcwd().'/'.$name;
 
         if (is_dir($baseDir)) {
             throw new \RuntimeException("Directory '$name' already exists!");
@@ -33,36 +33,36 @@ class ProjectGenerator
         file_put_contents("$baseDir/src/Controller/HomeController.php", $this->getHomeController());
 
         // 6. Copy framework files for local dev (Since we are in monorepo)
-        // In real world, `composer install` handles this. 
+        // In real world, `composer install` handles this.
         // For verify_gen.php, we might need to manually link or just assume composer install works if internet is available.
     }
 
     private function getComposerJson(string $name, string $type): string
     {
         return json_encode([
-            "name" => "app/$name",
-            "type" => "project",
-            "require" => [
-                "php" => "^8.2",
-                "tusk/framework" => "dev-main" // Assuming dev-main for now
+            'name' => "app/$name",
+            'type' => 'project',
+            'require' => [
+                'php' => '^8.2',
+                'tusk/framework' => 'dev-main', // Assuming dev-main for now
             ],
-            "autoload" => [
-                "psr-4" => [
-                    "App\\" => "src/"
-                ]
+            'autoload' => [
+                'psr-4' => [
+                    'App\\' => 'src/',
+                ],
             ],
-            "repositories" => [
+            'repositories' => [
                 [
-                    "type" => "path",
-                    "url" => "../tusk-framework" // HACK: for local dev verification
-                ]
-            ]
+                    'type' => 'path',
+                    'url' => '../tusk-framework', // HACK: for local dev verification
+                ],
+            ],
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     private function getDockerCompose(string $name, string $type): string
     {
-        return <<<YAML
+        return <<<'YAML'
 services:
   app:
     image: php:8.2-cli

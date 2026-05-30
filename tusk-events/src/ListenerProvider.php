@@ -17,7 +17,7 @@ class ListenerProvider implements ListenerProviderInterface
         // Sort by priority if we stored it (not implementing priority sort yet for simplicity)
         yield from $listeners;
 
-        // Also check for parent classes/interfaces? 
+        // Also check for parent classes/interfaces?
         // For v0.1 we stick to exact class match.
     }
 

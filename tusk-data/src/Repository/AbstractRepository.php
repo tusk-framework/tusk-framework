@@ -8,12 +8,12 @@ abstract class AbstractRepository
 {
     public function __construct(
         protected ConnectionInterface $db
-    ) {
-    }
+    ) {}
 
     protected function fetchOne(string $sql, array $params = []): ?array
     {
         $rows = $this->db->query($sql, $params);
+
         return $rows[0] ?? null;
     }
 

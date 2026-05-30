@@ -1,0 +1,19 @@
+parameters:
+    level: 4
+    paths:
+        - tusk-cli/src
+        - tusk-cloud/src
+        - tusk-contracts/src
+        - tusk-core/src
+        - tusk-data/src
+        - tusk-events/src
+        - tusk-runtime/src
+        - tusk-security/src
+        - tusk-web/src
+    ignoreErrors:
+        - identifier: while.alwaysTrue
+        - identifier: property.onlyWritten
+        - identifier: new.static
+        - identifier: nullCoalesce.offset
+        - identifier: nullCoalesce.variable
+        - '#Call to an undefined method Tusk\\Data\\Query\\Builder::(update|insert)\(\)#'

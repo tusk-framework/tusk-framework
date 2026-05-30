@@ -2,15 +2,18 @@
 
 namespace Tusk\Data\Model;
 
+use JsonSerializable;
 use Tusk\Data\DB;
 use Tusk\Data\Query\Builder;
-use JsonSerializable;
 
 abstract class Model implements JsonSerializable
 {
     protected string $table;
+
     protected string $primaryKey = 'id';
+
     protected array $attributes = [];
+
     protected array $fillable = [];
 
     public function __construct(array $attributes = [])
@@ -25,6 +28,7 @@ abstract class Model implements JsonSerializable
                 $this->attributes[$key] = $value;
             }
         }
+
         return $this;
     }
 
@@ -40,7 +44,8 @@ abstract class Model implements JsonSerializable
 
     public static function query(): Builder
     {
-        $instance = new static();
+        $instance = new static;
+
         return DB::table($instance->getTable());
     }
 
@@ -51,7 +56,7 @@ abstract class Model implements JsonSerializable
 
     public static function find(int|string $id): ?static
     {
-        $instance = new static();
+        $instance = new static;
         $data = static::query()->where($instance->getKeyName(), '=', $id)->first();
 
         if ($data) {
@@ -65,6 +70,7 @@ abstract class Model implements JsonSerializable
     {
         $instance = new static($attributes);
         $instance->save();
+
         return $instance;
     }
 
@@ -84,6 +90,7 @@ abstract class Model implements JsonSerializable
             if ($result) {
                 $this->attributes[$this->primaryKey] = DB::connection()->lastInsertId();
             }
+
             return $result;
         }
     }
@@ -96,7 +103,8 @@ abstract class Model implements JsonSerializable
 
         // Simple pluralizer: User -> users
         $class = basename(str_replace('\\', '/', static::class));
-        return strtolower($class) . 's';
+
+        return strtolower($class).'s';
     }
 
     public function getKeyName(): string
@@ -106,8 +114,9 @@ abstract class Model implements JsonSerializable
 
     protected function newInstance(array $attributes = []): static
     {
-        $model = new static();
+        $model = new static;
         $model->attributes = $attributes;
+
         return $model;
     }
 

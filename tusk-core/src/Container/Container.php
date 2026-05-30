@@ -4,10 +4,9 @@ namespace Tusk\Core\Container;
 
 use ReflectionClass;
 use ReflectionException;
-use Tusk\Contracts\Container\ContainerInterface;
-use Tusk\Contracts\Attributes\Service;
-use Exception;
 use RuntimeException;
+use Tusk\Contracts\Attributes\Service;
+use Tusk\Contracts\Container\ContainerInterface;
 
 class Container implements ContainerInterface
 {
@@ -26,7 +25,7 @@ class Container implements ContainerInterface
             return $this->instances[$id];
         }
 
-        if (!isset($this->definitions[$id])) {
+        if (! isset($this->definitions[$id])) {
             throw new RuntimeException("Service not found: {$id}");
         }
 
@@ -46,7 +45,7 @@ class Container implements ContainerInterface
         try {
             $reflection = new ReflectionClass($className);
         } catch (ReflectionException $e) {
-            throw new RuntimeException("Failed to reflect class {$className}: " . $e->getMessage(), 0, $e);
+            throw new RuntimeException("Failed to reflect class {$className}: ".$e->getMessage(), 0, $e);
         }
 
         $attributes = $reflection->getAttributes(Service::class);
@@ -84,7 +83,7 @@ class Container implements ContainerInterface
     {
         return [
             'definitions' => $this->definitions,
-            'scopes' => $this->scopes
+            'scopes' => $this->scopes,
         ];
     }
 
@@ -124,8 +123,8 @@ class Container implements ContainerInterface
 
         $constructor = $reflection->getConstructor();
 
-        if (null === $constructor) {
-            $instance = new $className();
+        if ($constructor === null) {
+            $instance = new $className;
         } else {
             $parameters = $constructor->getParameters();
             $dependencies = [];
@@ -133,7 +132,7 @@ class Container implements ContainerInterface
             foreach ($parameters as $parameter) {
                 $type = $parameter->getType();
 
-                if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+                if (! $type instanceof \ReflectionNamedType || $type->isBuiltin()) {
                     throw new RuntimeException("Cannot resolve builtin, union, or mixed type for parameter {$parameter->getName()} in {$className}");
                 }
 
@@ -145,7 +144,7 @@ class Container implements ContainerInterface
         }
 
         // Cache instance based on scope strategy (Singleton logic for now)
-        // In v0.2, if it's 'prototype', we wouldn't cache it. 
+        // In v0.2, if it's 'prototype', we wouldn't cache it.
         // But for 'singleton' and 'worker', we cache it until reset.
         $scope = $this->scopes[$className] ?? 'singleton';
 
@@ -166,7 +165,7 @@ class Container implements ContainerInterface
         foreach ($this->instances as $instance) {
             $reflection = new ReflectionClass($instance);
             foreach ($reflection->getMethods() as $method) {
-                if (!empty($method->getAttributes($attributeClass))) {
+                if (! empty($method->getAttributes($attributeClass))) {
                     $method->invoke($instance);
                 }
             }

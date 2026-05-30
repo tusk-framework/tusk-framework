@@ -2,15 +2,17 @@
 
 namespace Tusk\Runtime\Supervisor;
 
-use Tusk\Runtime\Process\ProcessManagerInterface;
-use Tusk\Runtime\Process\PcntlProcessManager;
-use Tusk\Runtime\Process\LoopProcessManager;
 use Exception;
+use Tusk\Runtime\Process\LoopProcessManager;
+use Tusk\Runtime\Process\PcntlProcessManager;
+use Tusk\Runtime\Process\ProcessManagerInterface;
 
 class Supervisor
 {
     private ProcessManagerInterface $processManager;
+
     private array $workers = [];
+
     private bool $running = false;
 
     public function __construct(
@@ -18,16 +20,16 @@ class Supervisor
     ) {
         // Auto-detect environment
         if (function_exists('pcntl_fork')) {
-            $this->processManager = new PcntlProcessManager();
+            $this->processManager = new PcntlProcessManager;
         } else {
-            $this->processManager = new LoopProcessManager();
+            $this->processManager = new LoopProcessManager;
         }
     }
 
     /**
      * Starts the supervisor loop.
-     * 
-     * @param callable $workerLogic The closure to run inside each worker.
+     *
+     * @param  callable  $workerLogic  The closure to run inside each worker.
      */
     public function start(callable $workerLogic): void
     {
@@ -52,7 +54,7 @@ class Supervisor
 
             // If not concurrent (Windows loop), the spawn has already blocked and finished.
             // So we just break the loop to avoid infinite respawn in single-thread mode.
-            if (!$this->processManager->supportsConcurrency()) {
+            if (! $this->processManager->supportsConcurrency()) {
                 break;
             }
 
@@ -70,7 +72,7 @@ class Supervisor
             $pid = $this->processManager->spawn($logic);
             $this->workers[$pid] = true;
         } catch (Exception $e) {
-            echo "[Supervisor] Failed to spawn worker: " . $e->getMessage() . "\n";
+            echo '[Supervisor] Failed to spawn worker: '.$e->getMessage()."\n";
         }
     }
 

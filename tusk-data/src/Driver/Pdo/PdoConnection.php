@@ -4,8 +4,8 @@ namespace Tusk\Data\Driver\Pdo;
 
 use PDO;
 use PDOException;
-use Tusk\Data\Contract\ConnectionInterface;
 use RuntimeException;
+use Tusk\Data\Contract\ConnectionInterface;
 
 class PdoConnection implements ConnectionInterface
 {
@@ -34,7 +34,7 @@ class PdoConnection implements ConnectionInterface
         try {
             $this->pdo = new PDO($this->dsn, $this->username, $this->password, $this->options);
         } catch (PDOException $e) {
-            throw new RuntimeException("Database connection failed: " . $e->getMessage(), 0, $e);
+            throw new RuntimeException('Database connection failed: '.$e->getMessage(), 0, $e);
         }
     }
 
@@ -44,6 +44,7 @@ class PdoConnection implements ConnectionInterface
 
         try {
             $stmt = $this->pdo->prepare($sql);
+
             return $stmt->execute($params);
         } catch (PDOException $e) {
             // Here we could handle reconnection logic if "MySQL server has gone away"
@@ -56,12 +57,14 @@ class PdoConnection implements ConnectionInterface
         $this->connect();
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
+
         return $stmt->fetchAll();
     }
 
     public function lastInsertId(): string|int
     {
         $this->connect();
+
         return $this->pdo->lastInsertId();
     }
 
@@ -70,6 +73,7 @@ class PdoConnection implements ConnectionInterface
         try {
             // Simple ping strategy
             $this->query('SELECT 1');
+
             return true;
         } catch (\Throwable $e) {
             return false;

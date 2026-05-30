@@ -21,7 +21,7 @@ class HealthCheckRegistry
             try {
                 $isHealthy = $check->check();
                 $results[$name] = $isHealthy ? 'UP' : 'DOWN';
-                if (!$isHealthy) {
+                if (! $isHealthy) {
                     $globalStatus = 'DOWN';
                 }
             } catch (\Throwable $e) {
@@ -32,7 +32,7 @@ class HealthCheckRegistry
 
         return [
             'status' => $globalStatus,
-            'checks' => $results
+            'checks' => $results,
         ];
     }
 }
