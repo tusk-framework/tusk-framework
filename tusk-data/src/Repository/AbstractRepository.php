@@ -34,13 +34,12 @@ abstract class AbstractRepository implements RepositoryInterface
     
     public function save(object $entity): void
     {
-        // Simple default behavior. Could be overridden.
-        // We'll leave it abstract or throw exception if not implemented, but it's an interface method.
+        throw new \BadMethodCallException(static::class . ' must implement save() or use a concrete repository adapter.');
     }
     
     public function remove(object $entity): void
     {
-        // Default behavior.
+        throw new \BadMethodCallException(static::class . ' must implement remove() or use a concrete repository adapter.');
     }
     
     abstract protected function hydrate(array $data): object;

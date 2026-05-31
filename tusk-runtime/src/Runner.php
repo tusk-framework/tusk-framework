@@ -2,8 +2,9 @@
 
 namespace Tusk\Runtime;
 
-use Tusk\Web\Http\Request;
-use Tusk\Web\Http\Response;
+use Psr\Http\Message\ResponseInterface;
+use Nyholm\Psr7\ServerRequest;
+use Nyholm\Psr7\Uri;
 use Tusk\Web\HttpKernel;
 
 class Runner
@@ -30,10 +31,10 @@ class Runner
             }
 
             try {
-                // Convert JSON to Tusk Request
-                $request = new Request(
+                // Convert JSON to PSR-7 ServerRequest
+                $request = new ServerRequest(
                     $reqData['method'] ?? 'GET',
-                    $reqData['url'] ?? '/',
+                    new Uri($reqData['url'] ?? '/'),
                     $reqData['headers'] ?? [],
                     $reqData['body'] ?? ''
                 );
@@ -50,12 +51,12 @@ class Runner
         }
     }
 
-    private function send(Response $response): void
+    private function send(ResponseInterface $response): void
     {
         $payload = json_encode([
-            'status' => $response->statusCode,
-            'headers' => $response->headers,
-            'body' => (string) $response->body,
+            'status' => $response->getStatusCode(),
+            'headers' => $response->getHeaders(),
+            'body' => (string) $response->getBody(),
         ]);
 
         fwrite(STDOUT, $payload."\n");

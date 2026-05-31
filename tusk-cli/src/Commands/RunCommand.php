@@ -37,7 +37,7 @@ class RunCommand extends Command
         $output->writeln("Starting application: {$file}");
 
         $container = new Container;
-        $kernel = new Kernel($container);
+        $kernel = new Kernel($container, new \Tusk\Runtime\Adapters\NativeLoopAdapter());
 
         require_once $filePath;
 

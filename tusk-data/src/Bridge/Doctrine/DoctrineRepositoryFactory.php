@@ -8,7 +8,7 @@ use Tusk\Contracts\Attributes\Service;
 /**
  * Factory to dynamically create Repository adapters for entities.
  */
-#[Service(scope: 'singleton')]
+#[Service(scope: 'request')]
 class DoctrineRepositoryFactory
 {
     public function __construct(

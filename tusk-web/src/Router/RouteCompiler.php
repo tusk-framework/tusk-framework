@@ -66,8 +66,8 @@ class RouteCompiler
                                         
                                         foreach ((array)$route->methods as $httpMethod) {
                                             $httpMethod = strtoupper($httpMethod);
-                                            // Handle parameters like {id} by converting to regex
-                                            $pattern = preg_replace('/\{([a-zA-Z0-9_]+)\}/', '(?P<$1>[^/]+)', $route->path);
+                                            $quotedPath = preg_quote($route->path, '#');
+                                            $pattern = preg_replace('/\\\\\{([a-zA-Z0-9_]+)\\\\\}/', '(?P<$1>[^/]+)', $quotedPath);
                                             $pattern = '#^' . $pattern . '$#';
                                             
                                             $routes[$httpMethod][$pattern] = $routeInfo;
