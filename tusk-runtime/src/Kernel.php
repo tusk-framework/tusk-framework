@@ -12,13 +12,10 @@ class Kernel implements ApplicationInterface
 {
     private bool $running = false;
 
-    private Supervisor $supervisor;
-
     public function __construct(
-        private ContainerInterface $container
-    ) {
-        $this->supervisor = new Supervisor(workerCount: 1); // Default to 1 for now
-    }
+        private ContainerInterface $container,
+        private \Tusk\Contracts\Runtime\RuntimeAdapterInterface $adapter
+    ) {}
 
     public function start(): void
     {
@@ -31,32 +28,25 @@ class Kernel implements ApplicationInterface
         // Run OnStart hooks (Global / Master Level)
         $this->container->runHooks(OnStart::class);
 
-        // Define the logic that runs inside each worker
-        $workerLogic = function () {
-            // New process started (or simulated)
-            // Reset worker-scoped services to ensure fresh instances
-            $this->container->resetScope('worker');
-
-            // In a real worker, this loop would accept requests
-            // For v0.2, we just simulate work
-            echo "[Worker] Started. Ready for work.\n";
-
-            while (true) {
-                // Simulate processing
-                usleep(500000);
-            }
+        // Define the request handler logic
+        $requestHandler = function ($request) {
+            // Here, we would map the raw request to a PSR-7 Request,
+            // dispatch it through Middlewares/Router, and return a Response.
+            // For now, it's just a dummy simulation:
+            return "Response for request";
         };
 
-        // Delegate to Supervisor
-        $this->supervisor->start($workerLogic);
+        // Delegate execution to the chosen Runtime Adapter (Native, RR, Swoole)
+        $this->adapter->start($this->container, $requestHandler);
 
+        // Once the adapter stops, we run shutdown procedures
         $this->shutdown();
     }
 
     public function shutdown(): void
     {
         if (! $this->running) {
-            // ensure hooks run even if start wasn't fully successful
+            return;
         }
 
         $this->running = false;
@@ -67,6 +57,7 @@ class Kernel implements ApplicationInterface
 
     public function stop(): void
     {
+        $this->adapter->stop();
         $this->running = false;
     }
 }

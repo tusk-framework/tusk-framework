@@ -6,23 +6,30 @@ use Tusk\Contracts\Events\ListenerProviderInterface;
 
 class ListenerProvider implements ListenerProviderInterface
 {
-    /** @var array<string, array<callable>> */
-    private array $listeners = [];
+    /** @var array<string, array<array{0: string, 1: string}>> */
+    private array $listenerMap = [];
+
+    public function __construct(
+        private \Tusk\Contracts\Container\ContainerInterface $container,
+        array $listenerMap = []
+    ) {
+        $this->listenerMap = $listenerMap;
+    }
 
     public function getListenersForEvent(object $event): iterable
     {
         $className = get_class($event);
-        $listeners = $this->listeners[$className] ?? [];
+        $listeners = $this->listenerMap[$className] ?? [];
 
-        // Sort by priority if we stored it (not implementing priority sort yet for simplicity)
-        yield from $listeners;
-
-        // Also check for parent classes/interfaces?
-        // For v0.1 we stick to exact class match.
-    }
-
-    public function addListener(string $eventClass, callable $listener): void
-    {
-        $this->listeners[$eventClass][] = $listener;
+        foreach ($listeners as $listener) {
+            $serviceId = $listener[0];
+            $method = $listener[1];
+            
+            // Resolve the listener lazily when the event is dispatched
+            $service = $this->container->get($serviceId);
+            
+            // Return a callable structure
+            yield [$service, $method];
+        }
     }
 }

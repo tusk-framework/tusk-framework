@@ -2,7 +2,7 @@
 
 namespace Tusk\Data\Query;
 
-use Tusk\Data\Connection\ConnectionInterface;
+use Tusk\Data\Contract\ConnectionInterface;
 
 class Builder
 {
@@ -75,7 +75,7 @@ class Builder
     {
         $query = $this->toSql();
 
-        return $this->connection->select($query, $this->bindings);
+        return $this->connection->query($query, $this->bindings);
     }
 
     public function first(): ?array
@@ -129,5 +129,57 @@ class Builder
         }
 
         return implode(', ', $sql);
+    }
+
+    public function insert(array $values): bool
+    {
+        if (empty($values)) {
+            return false;
+        }
+
+        $columns = implode(', ', array_keys($values));
+        $placeholders = implode(', ', array_fill(0, count($values), '?'));
+        
+        $sql = "INSERT INTO {$this->table} ({$columns}) VALUES ({$placeholders})";
+        
+        return $this->connection->execute($sql, array_values($values));
+    }
+
+    public function update(array $values): int
+    {
+        if (empty($values)) {
+            return 0;
+        }
+
+        $columns = [];
+        $bindings = [];
+        
+        foreach ($values as $key => $value) {
+            $columns[] = "{$key} = ?";
+            $bindings[] = $value;
+        }
+        
+        $sql = "UPDATE {$this->table} SET " . implode(', ', $columns);
+        
+        if (!empty($this->wheres)) {
+            $sql .= ' WHERE ' . $this->compileWheres();
+        }
+        
+        $bindings = array_merge($bindings, $this->bindings);
+        
+        $this->connection->execute($sql, $bindings);
+        return 1; // Or affected rows if execute() returned it
+    }
+
+    public function delete(): int
+    {
+        $sql = "DELETE FROM {$this->table}";
+        
+        if (!empty($this->wheres)) {
+            $sql .= ' WHERE ' . $this->compileWheres();
+        }
+        
+        $this->connection->execute($sql, $this->bindings);
+        return 1;
     }
 }

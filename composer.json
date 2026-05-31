@@ -14,7 +14,11 @@
     "require": {
         "php": "^8.2",
         "psr/event-dispatcher": "^1.0",
-        "firebase/php-jwt": "^7.0"
+        "firebase/php-jwt": "^7.0",
+        "psr/container": "^2.0",
+        "doctrine/orm": "^3.6",
+        "symfony/cache": "7.*",
+        "symfony/var-exporter": "7.*"
     },
     "bin": [
         "bin/tusk"
