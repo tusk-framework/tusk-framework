@@ -2,13 +2,14 @@
 
 namespace Tusk\Web;
 
+use Nyholm\Psr7\Response;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Tusk\Contracts\Container\ContainerInterface;
+use Tusk\Web\Http\Request as LegacyRequest;
 use Tusk\Web\Http\MiddlewarePipeline;
 use Tusk\Web\Router\RouterInterface;
-use Nyholm\Psr7\Response;
 
 class HttpKernel implements RequestHandlerInterface
 {
@@ -50,10 +51,26 @@ class HttpKernel implements RequestHandlerInterface
                 $method = $this->match->method;
 
                 $controller = $this->container->get($controllerClass);
-                
-                // We inject the Request object and URL parameters
-                // For simplicity, we just pass the request to the method
-                $response = $controller->$method($request, ...array_values($this->match->params));
+                $reflection = new \ReflectionMethod($controller, $method);
+                $parameters = $reflection->getParameters();
+                $requestArgument = $request;
+
+                if (isset($parameters[0])) {
+                    $parameterType = $parameters[0]->getType();
+                    if ($parameterType instanceof \ReflectionNamedType && $parameterType->getName() === LegacyRequest::class) {
+                        $requestArgument = new LegacyRequest(
+                            $request->getMethod(),
+                            $request->getUri()->getPath(),
+                            $request->getHeaders(),
+                            (string) $request->getBody(),
+                            [],
+                            $request->getQueryParams(),
+                            (array) $request->getParsedBody()
+                        );
+                    }
+                }
+
+                $response = $controller->$method($requestArgument, ...array_values($this->match->params));
 
                 if (is_array($response)) {
                     return new Response(200, ['Content-Type' => 'application/json'], json_encode($response));

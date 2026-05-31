@@ -145,10 +145,10 @@ class Builder
         return $this->connection->execute($sql, array_values($values));
     }
 
-    public function update(array $values): int
+    public function update(array $values): bool
     {
         if (empty($values)) {
-            return 0;
+            return false;
         }
 
         $columns = [];
@@ -167,11 +167,10 @@ class Builder
         
         $bindings = array_merge($bindings, $this->bindings);
         
-        $this->connection->execute($sql, $bindings);
-        return 1; // Or affected rows if execute() returned it
+        return $this->connection->execute($sql, $bindings);
     }
 
-    public function delete(): int
+    public function delete(): bool
     {
         $sql = "DELETE FROM {$this->table}";
         
@@ -179,7 +178,6 @@ class Builder
             $sql .= ' WHERE ' . $this->compileWheres();
         }
         
-        $this->connection->execute($sql, $this->bindings);
-        return 1;
+        return $this->connection->execute($sql, $this->bindings);
     }
 }
