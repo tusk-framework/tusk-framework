@@ -2,124 +2,89 @@
 
 namespace Tusk\Web;
 
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Server\RequestHandlerInterface;
 use Tusk\Contracts\Container\ContainerInterface;
-use Tusk\Contracts\Web\MiddlewareInterface;
-use Tusk\Contracts\Web\RequestHandlerInterface;
-use Tusk\Web\Http\Request;
-use Tusk\Web\Http\ResponsableInterface;
-use Tusk\Web\Http\Response;
-use Tusk\Web\Router\Router;
+use Tusk\Web\Http\MiddlewarePipeline;
+use Tusk\Web\Router\RouterInterface;
+use Nyholm\Psr7\Response;
 
-class HttpKernel
+class HttpKernel implements RequestHandlerInterface
 {
-    /** @var class-string<MiddlewareInterface>[] */
-    private array $middleware = [];
+    /** @var string[] */
+    private array $globalMiddleware = [];
 
     public function __construct(
         private ContainerInterface $container,
-        private Router $router
+        private RouterInterface $router
     ) {}
 
-    /**
-     * @param  class-string<MiddlewareInterface>  $middleware
-     */
-    public function prependMiddleware(string $middleware): self
+    public function addMiddleware(string $middlewareClass): self
     {
-        array_unshift($this->middleware, $middleware);
-
+        $this->globalMiddleware[] = $middlewareClass;
         return $this;
     }
 
-    /**
-     * @param  class-string<MiddlewareInterface>  $middleware
-     */
-    public function pushMiddleware(string $middleware): self
+    public function handle(ServerRequestInterface $request): ResponseInterface
     {
-        $this->middleware[] = $middleware;
+        $method = $request->getMethod();
+        $uri = $request->getUri()->getPath();
 
-        return $this;
-    }
+        $match = $this->router->match($method, $uri);
 
-    public function handle(Request $request): Response
-    {
-        return $this->sendRequestThroughMiddleware($request);
-    }
-
-    private function sendRequestThroughMiddleware(Request $request): Response
-    {
-        $match = $this->router->match($request);
-        $routeMiddleware = $match ? ($match['middleware'] ?? []) : [];
-        $fullMiddlewareStack = array_merge($this->middleware, $routeMiddleware);
-
-        $handler = new class($this->container, $fullMiddlewareStack, function (Request $request) use ($match) {
-            return $this->dispatchToRoute($request, $match);
-        }) implements RequestHandlerInterface {
-
-            private int $index = 0;
-
+        // Core handler that finally executes the Controller
+        $coreHandler = new class($this->container, $match) implements RequestHandlerInterface {
             public function __construct(
                 private ContainerInterface $container,
-                private array $middleware,
-                private \Closure $coreHandler
+                private ?\Tusk\Web\Router\RouteMatch $match
             ) {}
 
-            public function handle(Request $request): Response
+            public function handle(ServerRequestInterface $request): ResponseInterface
             {
-                if ($this->index >= count($this->middleware)) {
-                    return ($this->coreHandler)($request);
+                if (!$this->match) {
+                    return new Response(404, [], 'Not Found');
                 }
 
-                $middlewareClass = $this->middleware[$this->index];
-                $this->index++;
+                $controllerClass = $this->match->controller;
+                $method = $this->match->method;
 
-                /** @var MiddlewareInterface $middleware */
-                $middleware = $this->container->get($middlewareClass);
+                $controller = $this->container->get($controllerClass);
+                
+                // We inject the Request object and URL parameters
+                // For simplicity, we just pass the request to the method
+                $response = $controller->$method($request, ...array_values($this->match->params));
 
-                return $middleware->process($request, $this);
+                if (is_array($response)) {
+                    return new Response(200, ['Content-Type' => 'application/json'], json_encode($response));
+                }
+
+                if (is_string($response)) {
+                    return new Response(200, ['Content-Type' => 'text/html'], $response);
+                }
+
+                if ($response instanceof ResponseInterface) {
+                    return $response;
+                }
+
+                return new Response(500, [], 'Invalid controller response type');
             }
         };
 
-        return $handler->handle($request);
-    }
+        $pipeline = new MiddlewarePipeline($coreHandler);
 
-    private function dispatchToRoute(Request $request, ?array $match): Response
-    {
-        if (! $match) {
-            return new Response(404, [], 'Not Found');
+        // Pipe Global Middleware
+        foreach ($this->globalMiddleware as $middlewareClass) {
+            $pipeline->pipe($this->container->get($middlewareClass));
         }
 
-        $handler = $match['handler'];
-
-        // Handler is [ControllerClass, methodName]
-        if (is_array($handler) && isset($handler[0]) && is_string($handler[0])) {
-            $controllerClass = $handler[0];
-            $method = $handler[1];
-
-            // Resolve controller from DI container
-            $controllerInstance = $this->container->get($controllerClass);
-
-            // Execute method
-            $response = $controllerInstance->$method($request);
-
-            if ($response instanceof ResponsableInterface) {
-                $response = $response->toResponse($request);
+        // Pipe Route Specific Middleware
+        if ($match && !empty($match->middleware)) {
+            foreach ($match->middleware as $middlewareClass) {
+                $pipeline->pipe($this->container->get($middlewareClass));
             }
-
-            if (is_array($response)) {
-                return new Response(200, ['Content-Type' => 'application/json'], json_encode($response));
-            }
-
-            if (is_string($response)) {
-                return new Response(200, ['Content-Type' => 'text/html'], $response);
-            }
-
-            if (! $response instanceof Response) {
-                return new Response(500, [], 'Controller must return a Response, string, or array.');
-            }
-
-            return $response;
         }
 
-        return new Response(500, [], 'Invalid handler.');
+        return $pipeline->handle($request);
     }
 }

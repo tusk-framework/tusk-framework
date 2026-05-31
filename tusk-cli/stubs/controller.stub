@@ -1,0 +1,15 @@
+<?php
+
+namespace {{ namespace }};
+
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Nyholm\Psr7\Response;
+
+class {{ class }}
+{
+    public function index(ServerRequestInterface $request): ResponseInterface
+    {
+        return new Response(200, [], 'Hello from {{ class }}');
+    }
+}

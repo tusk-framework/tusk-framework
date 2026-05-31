@@ -2,18 +2,39 @@
 
 namespace Tusk\Cli\Commands;
 
-use Tusk\Cli\CommandInterface;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+use Tusk\Cli\Attribute\AsCommand;
+use Tusk\Contracts\Attributes\Service;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Events\Queue\DatabaseQueue;
 use Tusk\Events\Queue\QueueInterface;
 
-class QueueWorkerCommand implements CommandInterface
+#[Service]
+#[AsCommand('queue:work', 'Start the queue worker')]
+class QueueWorkerCommand extends Command
 {
-    public function __construct(private ?ContainerInterface $container = null) {}
+    public function __construct(
+        private ?ContainerInterface $container = null,
+        private ?LoggerInterface $logger = null
+    ) {
+        parent::__construct();
+    }
 
-    public function execute(array $args): int
+    protected function configure(): void
     {
-        echo "Starting queue worker...\n";
+        $this->setName('queue:work')
+             ->setDescription('Start processing jobs on the queue');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $output->writeln("<info>Starting queue worker...</info>");
+        if ($this->logger) {
+            $this->logger->info('Starting queue worker...');
+        }
 
         // Use container to resolve queue if available, otherwise default to DB Queue
         $queue = $this->container ?
@@ -25,21 +46,43 @@ class QueueWorkerCommand implements CommandInterface
             $job = $queue->pop();
 
             if ($job) {
-                echo "Processing Job: {$job['job_class']} (ID: {$job['id']})\n";
+                $output->writeln("Processing Job: {$job['job_class']} (ID: {$job['id']})");
+                if ($this->logger) {
+                    $this->logger->info("Processing Job: {$job['job_class']}", ['id' => $job['id']]);
+                }
 
                 try {
-                    $jobInstance = new $job['job_class']($job['payload']);
+                    $jobClass = $job['job_class'];
+                    $payload = $job['payload'];
+                    
+                    if ($this->container && $this->container->has($jobClass)) {
+                        $jobInstance = $this->container->get($jobClass);
+                        if (method_exists($jobInstance, 'setPayload')) {
+                            $jobInstance->setPayload($payload);
+                        }
+                    } else {
+                        $jobInstance = new $jobClass($payload);
+                    }
 
                     if (method_exists($jobInstance, 'handle')) {
-                        // Ideally we inject dependencies from container
-                        $jobInstance->handle();
+                        // Pass payload to handle just in case it doesn't use setPayload
+                        $jobInstance->handle($payload);
                     }
 
                     $queue->complete($job['id']);
-                    echo "Completed Job: {$job['job_class']} (ID: {$job['id']})\n";
+                    $output->writeln("<info>Completed Job: {$jobClass} (ID: {$job['id']})</info>");
+                    if ($this->logger) {
+                        $this->logger->info("Completed Job: {$jobClass}", ['id' => $job['id']]);
+                    }
 
                 } catch (\Throwable $e) {
-                    echo "Failed Job: {$job['job_class']} (ID: {$job['id']}) - {$e->getMessage()}\n";
+                    $output->writeln("<error>Failed Job: {$job['job_class']} (ID: {$job['id']}) - {$e->getMessage()}</error>");
+                    if ($this->logger) {
+                        $this->logger->error("Failed Job: {$job['job_class']}", [
+                            'id' => $job['id'],
+                            'error' => $e
+                        ]);
+                    }
                     $queue->fail($job['id'], $e);
                 }
             } else {
@@ -47,7 +90,7 @@ class QueueWorkerCommand implements CommandInterface
             }
         }
 
-        // @phpstan-ignore-next-line
-        return 0;
+        /** @phpstan-ignore-next-line */
+        return self::SUCCESS;
     }
 }

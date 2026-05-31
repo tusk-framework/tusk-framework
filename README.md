@@ -16,9 +16,9 @@ While typical frameworks focus on the "Web", Tusk focuses on your **Domain**.
 
 ### Core Philosophy
 1. **Domain-First**: Your code describes business rules, not framework boilerplate.
-2. **Persistent by Default**: Built for environments like the **Tusk Engine**, RoadRunner, or Swoole.
+2. **Zero-Reflection**: We compile your Container, Routes, and Events ahead of time. At runtime, the framework is incredibly fast and static.
 3. **Explicit over Magic**: No hidden behavior. Dependencies are pre-compiled and transparent.
-4. **Adult PHP**: Leveraging the best of PHP 8.2+ (Readonly, Attributes, Fibers).
+4. **Adult PHP**: Leveraging the best of PHP 8.2+ (Readonly, Attributes, Native Types).
 
 ---
 
@@ -67,13 +67,13 @@ class UserController {
 
 ---
 
-## The Runtime Companion
+## The Compiler Companion
 
-Although the Framework can run on standard servers, it achieves **Maximum Performance** when paired with the [**Tusk Engine**](https://github.com/tusk-framework/tusk-engine).
+Tusk achieves **Maximum Performance** using its CLI compiler:
 
-- **Go-Powered**: A native master process handles the HTTP stack.
-- **NDJSON Protocol**: Efficient communication between Go and PHP.
-- **Unified DX**: The `tusk` binary orchestrates both the engine and these framework components.
+- **Ahead-Of-Time (AOT)**: Generates static `.tusk` files with raw PHP instructions.
+- **Zero-Reflection**: At runtime, there are no heavy reflection calls.
+- **Unified DX**: The `bin/tusk build` binary orchestrates the compilation of DI, Routes, and Commands.
 
 ---
 

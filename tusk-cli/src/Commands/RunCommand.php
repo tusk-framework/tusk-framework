@@ -2,40 +2,47 @@
 
 namespace Tusk\Cli\Commands;
 
-use Tusk\Cli\CommandInterface;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputArgument;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+use Tusk\Cli\Attribute\AsCommand;
+use Tusk\Contracts\Attributes\Service;
 use Tusk\Core\Container\Container;
 use Tusk\Runtime\Kernel;
 
-class RunCommand implements CommandInterface
+#[Service]
+#[AsCommand('run', 'Run a Tusk application file directly')]
+class RunCommand extends Command
 {
-    public function execute(array $args): int
+    protected function configure(): void
     {
-        $file = $args[0] ?? null;
+        $this->setName('run')
+             ->setDescription('Run a Tusk application file directly')
+             ->addArgument('file', InputArgument::REQUIRED, 'The file to run');
+    }
 
-        if (! $file) {
-            echo "Usage: php tusk run <file>\n";
-
-            return 1;
-        }
-
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $file = $input->getArgument('file');
         $filePath = realpath($file);
 
         if (! $filePath || ! file_exists($filePath)) {
-            echo "File not found: {$file}\n";
+            $output->writeln("<error>File not found: {$file}</error>");
 
-            return 1;
+            return self::FAILURE;
         }
 
-        echo "Tusk Framework v0.1.0\n";
-        echo "Starting application: {$file}\n";
+        $output->writeln("<info>Tusk Framework v0.1.0</info>");
+        $output->writeln("Starting application: {$file}");
 
         $container = new Container;
-        $kernel = new Kernel($container);
+        $kernel = new Kernel($container, new \Tusk\Runtime\Adapters\NativeLoopAdapter());
 
         require_once $filePath;
 
         $kernel->start();
 
-        return 0;
+        return self::SUCCESS;
     }
 }

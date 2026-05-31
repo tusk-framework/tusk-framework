@@ -2,8 +2,9 @@
 
 namespace Tusk\Web\Server;
 
-use Tusk\Web\Http\Request;
-use Tusk\Web\Http\Response;
+use Psr\Http\Message\ResponseInterface;
+use Nyholm\Psr7\ServerRequest;
+use Nyholm\Psr7\Response;
 use Tusk\Web\HttpKernel;
 
 class HttpServer
@@ -84,7 +85,7 @@ class HttpServer
         $this->sendResponse($conn, $response);
     }
 
-    private function parseRequest(string $raw): Request
+    private function parseRequest(string $raw): ServerRequest
     {
         [$headerPart, $body] = explode("\r\n\r\n", $raw, 2);
         $lines = explode("\r\n", $headerPart);
@@ -101,29 +102,21 @@ class HttpServer
             }
         }
 
-        return new Request($method, $uri, $headers, $body ?? '');
+        return new ServerRequest($method, $uri, $headers, $body ?? '');
     }
 
-    private function sendResponse($conn, Response $response): void
+    private function sendResponse($conn, ResponseInterface $response): void
     {
-        $statusText = match ($response->statusCode) {
-            200 => 'OK',
-            201 => 'Created',
-            400 => 'Bad Request',
-            401 => 'Unauthorized',
-            403 => 'Forbidden',
-            404 => 'Not Found',
-            405 => 'Method Not Allowed',
-            500 => 'Internal Server Error',
-            default => 'Unknown'
-        };
+        $statusText = $response->getReasonPhrase() ?: 'Unknown';
 
-        $lines = ["HTTP/1.1 {$response->statusCode} $statusText"];
-        foreach ($response->headers as $name => $value) {
-            $lines[] = "$name: $value";
+        $lines = ["HTTP/1.1 {$response->getStatusCode()} $statusText"];
+        foreach ($response->getHeaders() as $name => $values) {
+            foreach ($values as $value) {
+                $lines[] = "$name: $value";
+            }
         }
 
-        $body = (string) $response->body;
+        $body = (string) $response->getBody();
         $lines[] = 'Content-Length: '.strlen($body);
         $lines[] = 'Connection: close';
         $lines[] = '';

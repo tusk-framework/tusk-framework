@@ -1,8 +1,7 @@
 # Tusk CLI
 
 The **Tusk CLI** provides developer tooling and command-line interfaces for the Tusk Framework. 
-
-It works in tandem with the **Tusk Engine (Go)** to provide a seamless developer experience.
+It works as the primary build tool to compile the Ahead-Of-Time (AOT) files.
 
 ## Responsibilities
 - **Generator**: Generate controllers, models, and migrations.
