@@ -18,7 +18,14 @@
         "psr/container": "^2.0",
         "doctrine/orm": "^3.6",
         "symfony/cache": "7.*",
-        "symfony/var-exporter": "7.*"
+        "symfony/var-exporter": "7.*",
+        "psr/http-message": "^2.0",
+        "psr/http-server-middleware": "^1.0",
+        "psr/http-server-handler": "^1.0",
+        "nyholm/psr7": "^1.8",
+        "symfony/console": "^8.1",
+        "psr/log": "^3.0",
+        "psr/simple-cache": "^3.0"
     },
     "bin": [
         "bin/tusk"

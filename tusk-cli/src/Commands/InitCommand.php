@@ -2,46 +2,49 @@
 
 namespace Tusk\Cli\Commands;
 
-use Tusk\Cli\CommandInterface;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputArgument;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\OutputInterface;
+use Tusk\Cli\Attribute\AsCommand;
 use Tusk\Cli\Generator\ProjectGenerator;
+use Tusk\Contracts\Attributes\Service;
 
-class InitCommand implements CommandInterface
+#[Service]
+#[AsCommand('init', 'Initialize a new Tusk project')]
+class InitCommand extends Command
 {
-    public function execute(array $args): int
+    protected function configure(): void
     {
-        // Simple arg parsing: php tusk init <name> --type=<type>
-        $name = $args[0] ?? null;
-        $type = 'api';
+        $this->setName('init')
+             ->setDescription('Initialize a new Tusk project')
+             ->addArgument('name', InputArgument::REQUIRED, 'The name of the project')
+             ->addOption('type', null, InputOption::VALUE_OPTIONAL, 'The project type (api or micro)', 'api');
+    }
 
-        foreach ($args as $arg) {
-            if (str_starts_with($arg, '--type=')) {
-                $type = substr($arg, 7);
-            }
-        }
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $name = $input->getArgument('name');
+        $type = $input->getOption('type');
 
-        if (! $name) {
-            echo "Usage: php tusk init <name> [--type=api|micro]\n";
-
-            return 1;
-        }
-
-        echo "Creating Tusk Project: $name\n";
-        echo "Type: $type\n";
+        $output->writeln("<info>Creating Tusk Project: {$name}</info>");
+        $output->writeln("Type: {$type}");
 
         try {
             $generator = new ProjectGenerator;
             $generator->generate($name, $type);
 
-            echo "Project '$name' created successfully!\n";
-            echo "1. cd $name\n";
-            echo "2. composer install\n"; // Assume composer is available globally
-            echo "3. docker-compose up\n";
+            $output->writeln("<info>Project '{$name}' created successfully!</info>");
+            $output->writeln("1. cd {$name}");
+            $output->writeln("2. composer install");
+            $output->writeln("3. docker-compose up");
 
-            return 0;
+            return self::SUCCESS;
         } catch (\Exception $e) {
-            echo 'Error: '.$e->getMessage()."\n";
+            $output->writeln("<error>Error: " . $e->getMessage() . "</error>");
 
-            return 1;
+            return self::FAILURE;
         }
     }
 }

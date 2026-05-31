@@ -2,23 +2,30 @@
 
 namespace Tusk\Cli\Commands;
 
-use Tusk\Cli\CommandInterface;
+use Symfony\Component\Console\Input\InputArgument;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+use Tusk\Cli\Attribute\AsCommand;
 use Tusk\Cli\Generator\StubGenerator;
+use Tusk\Contracts\Attributes\Service;
 
-class MakeControllerCommand implements CommandInterface
+#[Service]
+#[AsCommand('make:controller', 'Create a new HTTP Controller class')]
+class MakeControllerCommand extends \Symfony\Component\Console\Command\Command
 {
-    public function execute(array $args): int
+    protected function configure(): void
     {
-        if (empty($args)) {
-            echo "Error: Controller name required.\n";
-            echo "Usage: tusk make:controller <ControllerName>\n";
+        $this->setName('make:controller')
+             ->setDescription('Create a new HTTP Controller class')
+             ->addArgument('name', InputArgument::REQUIRED, 'The name of the controller class');
+    }
 
-            return 1;
-        }
-
-        $name = $args[0];
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $name = $input->getArgument('name');
         $className = basename(str_replace('\\', '/', $name));
         $namespace = 'App\\Http\\Controllers'; // Defaulting for simple usage
+        
         if (str_contains($name, '\\')) {
             $namespace .= '\\'.dirname(str_replace('/', '\\', $name));
         }
@@ -34,7 +41,7 @@ class MakeControllerCommand implements CommandInterface
             if (! is_dir($dir)) {
                 mkdir($dir, 0755, true);
             }
-            file_put_contents($stub, "<?php\n\nnamespace {{ namespace }};\n\nuse Tusk\Web\Http\Request;\nuse Tusk\Web\Http\Response;\n\nclass {{ class }}\n{\n    public function index(Request \$request): Response\n    {\n        return new Response(200, [], 'Hello from {{ class }}');\n    }\n}\n");
+            file_put_contents($stub, "<?php\n\nnamespace {{ namespace }};\n\nuse Psr\Http\Message\ResponseInterface;\nuse Psr\Http\Message\ServerRequestInterface;\nuse Nyholm\Psr7\Response;\n\nclass {{ class }}\n{\n    public function index(ServerRequestInterface \$request): ResponseInterface\n    {\n        return new Response(200, [], 'Hello from {{ class }}');\n    }\n}\n");
         }
 
         $success = $generator->generate($stub, $target, [
@@ -43,13 +50,11 @@ class MakeControllerCommand implements CommandInterface
         ]);
 
         if ($success) {
-            echo "Controller created successfully at {$target}\n";
-
-            return 0;
+            $output->writeln("<info>Controller created successfully at {$target}</info>");
+            return self::SUCCESS;
         } else {
-            echo "Error: Could not create controller. File may already exist.\n";
-
-            return 1;
+            $output->writeln("<error>Error: Could not create controller. File may already exist.</error>");
+            return self::FAILURE;
         }
     }
 }

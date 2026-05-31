@@ -1,0 +1,101 @@
+#!/usr/bin/env php
+<?php
+
+// Tusk CLI Entry Point
+
+$autoloadFiles = [
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../../../autoload.php', // In case tusk is a global dependency or vendor installed
+];
+
+$autoloadFile = null;
+foreach ($autoloadFiles as $file) {
+    if (file_exists($file)) {
+        $autoloadFile = $file;
+        break;
+    }
+}
+
+if (!$autoloadFile) {
+    fwrite(STDERR, "You must set up the project dependencies using `composer install`." . PHP_EOL);
+    exit(1);
+}
+
+require $autoloadFile;
+
+use Symfony\Component\Console\Application;
+use Tusk\Core\Container\ContainerCompiler;
+use Tusk\Core\Container\ServiceScanner;
+use Tusk\Core\Container\CompilerPipeline;
+use Tusk\Web\Router\RouteCompiler;
+use Tusk\Cli\CommandCompiler;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\CommandLoader\ContainerCommandLoader;
+
+// In a real framework execution, the app container would be loaded here.
+// For now, we will dynamically load the commands from the compilation.
+
+// We will force-compile the CLI commands right here for simplicity if the CompiledCommandRegistry doesn't exist,
+// or we provide a core command to "build" the framework.
+$application = new Application('Tusk Framework CLI', '0.1.0');
+
+// Register the core `tusk build` command
+$application->addCommand(new class extends Command {
+    protected function configure(): void
+    {
+        $this->setName('build')
+             ->setDescription('Compiles the Dependency Injection Container, Routes, and Commands.');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $output->writeln('<info>Building Tusk Framework...</info>');
+        
+        $appDir = getcwd(); 
+        
+        $output->writeln('Compiling Container...');
+        $containerPipeline = new CompilerPipeline(new ServiceScanner(), new ContainerCompiler());
+        $containerPipeline->compileAndDump([$appDir], $appDir . '/.tusk/CompiledContainer.php');
+        
+        $output->writeln('Compiling Routes...');
+        $routeCompiler = new RouteCompiler();
+        $routeCompiler->compileAndDump([$appDir], $appDir . '/.tusk/CompiledRouter.php');
+        
+        $output->writeln('Compiling Commands...');
+        $commandCompiler = new CommandCompiler();
+        $commandCompiler->compileAndDump([$appDir], $appDir . '/.tusk/CompiledCommandRegistry.php');
+
+        $output->writeln('<info>Build completed successfully.</info>');
+        return Command::SUCCESS;
+    }
+});
+
+// Load user commands if CompiledCommandRegistry exists
+$appDir = getcwd();
+$registryPath = $appDir . '/.tusk/CompiledCommandRegistry.php';
+$containerPath = $appDir . '/.tusk/CompiledContainer.php';
+
+if (file_exists($registryPath) && file_exists($containerPath)) {
+    require_once $registryPath;
+    require_once $containerPath;
+    
+    if (class_exists('Tusk\Compiled\CompiledCommandRegistry') && class_exists('Tusk\Compiled\CompiledContainer')) {
+        $container = new \Tusk\Compiled\CompiledContainer();
+        $commands = \Tusk\Compiled\CompiledCommandRegistry::getCommands();
+        
+        $commandMap = [];
+        foreach ($commands as $name => $info) {
+            $commandMap[$name] = $info['class'];
+            
+            // To ensure the DI container can resolve it, we could inject it into the command if needed,
+            // but the container already resolves it automatically if the dependencies are mapped.
+        }
+        
+        $commandLoader = new ContainerCommandLoader($container, $commandMap);
+        $application->setCommandLoader($commandLoader);
+    }
+}
+
+$application->run();

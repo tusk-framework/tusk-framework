@@ -36,6 +36,8 @@ class ContainerCompiler
         $code .= "        }\n\n";
         
         $code .= "        return match (\$id) {\n";
+        $code .= "            TuskContainerInterface::class => \$this,\n";
+        $code .= "            ContainerInterface::class => \$this,\n";
         
         $aliasMap = [];
         foreach ($definitions as $id => $def) {

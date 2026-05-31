@@ -2,31 +2,45 @@
 
 namespace Tusk\Cli\Commands;
 
-use Tusk\Cli\CommandInterface;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+use Tusk\Cli\Attribute\AsCommand;
+use Tusk\Contracts\Attributes\Service;
 use Tusk\Data\Migration\Migrator;
 
-class MigrateCommand implements CommandInterface
+#[Service]
+#[AsCommand('migrate', 'Run the database migrations')]
+class MigrateCommand extends Command
 {
-    public function execute(array $args): int
+    protected function configure(): void
+    {
+        $this->setName('migrate')
+             ->setDescription('Run the database migrations');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $migrationsPath = getcwd().'/database/migrations';
 
         if (! is_dir($migrationsPath)) {
-            echo "Migrations directory not found at {$migrationsPath}\n";
+            $output->writeln("<error>Migrations directory not found at {$migrationsPath}</error>");
 
-            return 1;
+            return self::FAILURE;
         }
 
         $migrator = new Migrator($migrationsPath);
 
         try {
+            $output->writeln("<info>Running migrations...</info>");
             $migrator->run();
+            $output->writeln("<info>Migrations completed successfully.</info>");
 
-            return 0;
+            return self::SUCCESS;
         } catch (\Exception $e) {
-            echo 'Migration failed: '.$e->getMessage()."\n";
+            $output->writeln("<error>Migration failed: " . $e->getMessage() . "</error>");
 
-            return 1;
+            return self::FAILURE;
         }
     }
 }

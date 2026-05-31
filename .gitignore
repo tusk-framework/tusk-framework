@@ -1,5 +1,4 @@
 /vendor
-/bin
 /build
 composer.lock
 .phpunit.result.cache
@@ -8,3 +7,4 @@ composer.lock
 .idea
 .vscode
 .DS_Store
+/.tusk

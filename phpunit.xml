@@ -9,6 +9,9 @@
             <directory>tests</directory>
             <directory>tusk-core/tests</directory>
             <directory>tusk-web/tests</directory>
+            <directory>tusk-cli/tests</directory>
+            <directory>tusk-data/tests</directory>
+            <directory>tusk-events/tests</directory>
         </testsuite>
     </testsuites>
     <php>
