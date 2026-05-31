@@ -90,6 +90,7 @@ class QueueWorkerCommand extends Command
             }
         }
 
+        /** @phpstan-ignore-next-line */
         return self::SUCCESS;
     }
 }

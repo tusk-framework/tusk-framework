@@ -16,4 +16,3 @@ parameters:
         - identifier: new.static
         - identifier: nullCoalesce.offset
         - identifier: nullCoalesce.variable
-        - '#Call to an undefined method Tusk\\Data\\Query\\Builder::(update|insert)\(\)#'

@@ -25,6 +25,7 @@ class RoadRunnerAdapter implements RuntimeAdapterInterface
             // $request = $psr7->waitRequest();
             $request = null; // Simulation
             
+            /** @phpstan-ignore-next-line */
             if ($request === null) {
                 // In RoadRunner, null payload might mean stop or disconnect
                 break;

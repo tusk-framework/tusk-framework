@@ -2,7 +2,7 @@
 
 namespace Tusk\Data;
 
-use Tusk\Data\Connection\ConnectionInterface;
+use Tusk\Data\Contract\ConnectionInterface;
 use Tusk\Data\Query\Builder;
 
 class DB

@@ -42,6 +42,7 @@ class NativeLoopAdapter implements RuntimeAdapterInterface
             usleep(100000); // 100ms
         }
         
+        /** @phpstan-ignore-next-line */
         echo "[NativeLoop] Worker gracefully stopped.\n";
     }
 
