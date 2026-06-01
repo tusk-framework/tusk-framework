@@ -90,9 +90,9 @@ class HttpServer
         [$headerPart, $body] = explode("\r\n\r\n", $raw, 2);
         $lines = explode("\r\n", $headerPart);
         $firstLine = array_shift($lines);
-        $parts = explode(' ', $firstLine);
-        $method = $parts[0] ?? 'GET';
-        $uri = $parts[1] ?? '/';
+        $parts = explode(' ', (string) $firstLine);
+        $method = $parts[0] !== '' ? $parts[0] : 'GET';
+        $uri = $parts[1] !== '' ? $parts[1] : '/';
 
         $headers = [];
         foreach ($lines as $line) {
@@ -102,7 +102,7 @@ class HttpServer
             }
         }
 
-        return new ServerRequest($method, $uri, $headers, $body ?? '');
+        return new ServerRequest($method, $uri, $headers, $body);
     }
 
     private function sendResponse($conn, ResponseInterface $response): void

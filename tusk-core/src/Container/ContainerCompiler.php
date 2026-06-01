@@ -42,16 +42,19 @@ class ContainerCompiler
         $aliasMap = [];
         foreach ($definitions as $id => $def) {
             $class = $def['class'];
-            $code .= "            '$class' => \$this->resolve_{$this->sanitizeName($class)}(),\n";
+            $provides = $def['provides'] ?? $class;
+            $code .= "            '$provides' => \$this->resolve_{$this->sanitizeName($class)}(),\n";
             
+            // If it's a factory, we don't alias the factory's own class to itself automatically 
+            // unless requested. We alias its interfaces.
             foreach ($def['interfaces'] as $interface) {
                 // Last registered class for an interface wins
-                $aliasMap[$interface] = $class;
+                $aliasMap[$interface] = $provides;
             }
         }
         
-        foreach ($aliasMap as $interface => $class) {
-            $code .= "            '$interface' => \$this->get('$class'),\n";
+        foreach ($aliasMap as $interface => $provides) {
+            $code .= "            '$interface' => \$this->get('$provides'),\n";
         }
         
         $code .= "            default => throw new RuntimeException(\"Service not found: \$id\"),\n";
@@ -61,6 +64,8 @@ class ContainerCompiler
         // Factory methods
         foreach ($definitions as $id => $def) {
             $class = $def['class'];
+            $provides = $def['provides'] ?? $class;
+            $isFactory = $def['is_factory'] ?? false;
             $scope = $def['scope'];
             $deps = $def['dependencies'];
             
@@ -68,12 +73,21 @@ class ContainerCompiler
             $methodName = "resolve_" . $this->sanitizeName($class);
             
             $code .= "    private function {$methodName}(): object\n    {\n";
-            $code .= "        \$instance = new \\$class($depString);\n";
+            if ($isFactory) {
+                $code .= "        \$factory = new \\$class($depString);\n";
+                $code .= "        try {\n";
+                $code .= "            \$instance = \$factory();\n";
+                $code .= "        } catch (\Throwable \$e) {\n";
+                $code .= "            throw new RuntimeException(\"Error in factory $class: \" . \$e->getMessage(), 0, \$e);\n";
+                $code .= "        }\n";
+            } else {
+                $code .= "        \$instance = new \\$class($depString);\n";
+            }
             
             if ($scope === 'singleton') {
-                $code .= "        \$this->singletonInstances['$class'] = \$instance;\n";
+                $code .= "        \$this->singletonInstances['$provides'] = \$instance;\n";
             } elseif ($scope === 'request') {
-                $code .= "        \$this->requestInstances['$class'] = \$instance;\n";
+                $code .= "        \$this->requestInstances['$provides'] = \$instance;\n";
             }
             
             $code .= "        return \$instance;\n";
@@ -84,7 +98,10 @@ class ContainerCompiler
         $code .= "    public function has(string \$id): bool\n    {\n";
         $code .= "        return in_array(\$id, [\n";
         
-        $allIds = array_unique(array_merge(array_keys($definitions), array_keys($aliasMap)));
+        $allIds = array_unique(array_merge(
+            array_column($definitions, 'provides'),
+            array_keys($aliasMap)
+        ));
         foreach ($allIds as $id) {
             $code .= "            '$id',\n";
         }

@@ -2,13 +2,13 @@
 
 namespace Tusk\Web;
 
+use Nyholm\Psr7\Response;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Web\Http\MiddlewarePipeline;
 use Tusk\Web\Router\RouterInterface;
-use Nyholm\Psr7\Response;
 
 class HttpKernel implements RequestHandlerInterface
 {
@@ -50,13 +50,10 @@ class HttpKernel implements RequestHandlerInterface
                 $method = $this->match->method;
 
                 $controller = $this->container->get($controllerClass);
-                
-                // We inject the Request object and URL parameters
-                // For simplicity, we just pass the request to the method
                 $response = $controller->$method($request, ...array_values($this->match->params));
 
                 if (is_array($response)) {
-                    return new Response(200, ['Content-Type' => 'application/json'], json_encode($response));
+                    return new Response(200, ['Content-Type' => 'application/json'], (string) json_encode($response));
                 }
 
                 if (is_string($response)) {

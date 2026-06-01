@@ -2,76 +2,79 @@
 
 namespace Tusk\Events\Queue;
 
-use Tusk\Data\DB;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Schema\Table;
 
 class DatabaseQueue implements QueueInterface
 {
     private string $table = 'jobs';
 
-    public function push(string $jobClass, array $payload = []): void
+    public function __construct(private Connection $connection)
     {
         $this->ensureTableExists();
+    }
 
-        $stmt = DB::connection()->getPdo()->prepare(
-            "INSERT INTO {$this->table} (job_class, payload, status) VALUES (?, ?, 'pending')"
-        );
-        $stmt->execute([$jobClass, json_encode($payload)]);
+    public function push(string $jobClass, array $payload = []): void
+    {
+        $this->connection->insert($this->table, [
+            'job_class' => $jobClass,
+            'payload'   => json_encode($payload),
+            'status'    => 'pending',
+        ]);
     }
 
     public function pop(): ?array
     {
-        $this->ensureTableExists();
+        return $this->connection->transactional(function (Connection $conn): ?array {
+            $row = $conn->fetchAssociative(
+                "SELECT id, job_class, payload FROM {$this->table} WHERE status = 'pending' ORDER BY id ASC LIMIT 1"
+            );
 
-        $pdo = DB::connection()->getPdo();
+            if (!$row) {
+                return null;
+            }
 
-        $pdo->beginTransaction();
-
-        // Very basic implementation, real queue needs 'FOR UPDATE SKIP LOCKED' or similar depending on DB driver
-        $stmt = $pdo->query("SELECT id, job_class, payload FROM {$this->table} WHERE status = 'pending' ORDER BY id ASC LIMIT 1");
-        $job = $stmt->fetch(\PDO::FETCH_ASSOC);
-
-        if ($job) {
-            $update = $pdo->prepare("UPDATE {$this->table} SET status = 'processing', reserved_at = CURRENT_TIMESTAMP WHERE id = ?");
-            $update->execute([$job['id']]);
-            $pdo->commit();
+            $conn->update($this->table, ['status' => 'processing', 'reserved_at' => date('Y-m-d H:i:s')], ['id' => $row['id']]);
 
             return [
-                'id' => $job['id'],
-                'job_class' => $job['job_class'],
-                'payload' => json_decode($job['payload'], true),
+                'id'        => $row['id'],
+                'job_class' => $row['job_class'],
+                'payload'   => json_decode((string) $row['payload'], true),
             ];
-        }
-
-        $pdo->commit();
-
-        return null;
+        });
     }
 
     public function complete(int|string $jobId): void
     {
-        $stmt = DB::connection()->getPdo()->prepare("DELETE FROM {$this->table} WHERE id = ?");
-        $stmt->execute([$jobId]);
+        $this->connection->delete($this->table, ['id' => $jobId]);
     }
 
     public function fail(int|string $jobId, \Throwable $e): void
     {
-        $stmt = DB::connection()->getPdo()->prepare(
-            "UPDATE {$this->table} SET status = 'failed', exception = ? WHERE id = ?"
-        );
-        $stmt->execute([$e->getMessage(), $jobId]);
+        $this->connection->update($this->table, [
+            'status'    => 'failed',
+            'exception' => $e->getMessage(),
+        ], ['id' => $jobId]);
     }
 
     private function ensureTableExists(): void
     {
-        $sql = "CREATE TABLE IF NOT EXISTS {$this->table} (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            job_class VARCHAR(255) NOT NULL,
-            payload TEXT NOT NULL,
-            status VARCHAR(50) DEFAULT 'pending',
-            reserved_at TIMESTAMP NULL,
-            exception TEXT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )";
-        DB::connection()->getPdo()->exec($sql);
+        $schemaManager = $this->connection->createSchemaManager();
+
+        if ($schemaManager->tablesExist([$this->table])) {
+            return;
+        }
+
+        $table = new Table($this->table);
+        $table->addColumn('id', 'integer', ['autoincrement' => true]);
+        $table->addColumn('job_class', 'string', ['length' => 255]);
+        $table->addColumn('payload', 'text');
+        $table->addColumn('status', 'string', ['length' => 50, 'default' => 'pending']);
+        $table->addColumn('reserved_at', 'datetime', ['notnull' => false]);
+        $table->addColumn('exception', 'text', ['notnull' => false]);
+        $table->addColumn('created_at', 'datetime', ['default' => 'CURRENT_TIMESTAMP']);
+        $table->setPrimaryKey(['id']);
+
+        $schemaManager->createTable($table);
     }
 }

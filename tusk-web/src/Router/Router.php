@@ -4,9 +4,8 @@ namespace Tusk\Web\Router;
 
 use ReflectionClass;
 use Tusk\Web\Attribute\Route;
-use Tusk\Web\Http\Request;
 
-class Router
+class Router implements RouterInterface
 {
     private array $routes = [];
 
@@ -33,17 +32,31 @@ class Router
     {
         foreach ($methods as $method) {
             $this->routes[strtoupper($method)][$path] = [
-                'handler' => $handler,
+                'handler'    => $handler,
                 'middleware' => $middleware,
             ];
         }
     }
 
-    public function match(Request $request): ?array
+    public function match(string $method, string $uri): ?RouteMatch
     {
-        $method = strtoupper($request->method);
-        $path = parse_url($request->uri, PHP_URL_PATH);
+        $method = strtoupper($method);
 
-        return $this->routes[$method][$path] ?? null;
+        $route = $this->routes[$method][$uri] ?? null;
+
+        if (!$route) {
+            return null;
+        }
+
+        $handler = $route['handler'];
+
+        [$controller, $action] = is_array($handler) ? $handler : explode('@', $handler);
+
+        return new RouteMatch(
+            controller: $controller,
+            method: $action,
+            params: [],
+            middleware: $route['middleware'] ?? [],
+        );
     }
 }

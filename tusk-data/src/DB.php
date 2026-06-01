@@ -2,30 +2,19 @@
 
 namespace Tusk\Data;
 
-use Tusk\Data\Contract\ConnectionInterface;
-use Tusk\Data\Query\Builder;
+use Doctrine\DBAL\Connection;
 
 class DB
 {
-    protected static ConnectionInterface $connection;
+    protected static Connection $connection;
 
-    public static function setConnection(ConnectionInterface $connection): void
+    public static function setConnection(Connection $connection): void
     {
         self::$connection = $connection;
     }
 
-    public static function connection(): ConnectionInterface
+    public static function connection(): Connection
     {
         return self::$connection;
-    }
-
-    public static function table(string $table): Builder
-    {
-        return (new Builder(self::$connection))->table($table);
-    }
-
-    public static function query(): Builder
-    {
-        return new Builder(self::$connection);
     }
 }

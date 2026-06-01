@@ -82,19 +82,24 @@ if (file_exists($registryPath) && file_exists($containerPath)) {
     require_once $containerPath;
     
     if (class_exists('Tusk\Compiled\CompiledCommandRegistry') && class_exists('Tusk\Compiled\CompiledContainer')) {
-        $container = new \Tusk\Compiled\CompiledContainer();
-        $commands = \Tusk\Compiled\CompiledCommandRegistry::getCommands();
-        
-        $commandMap = [];
-        foreach ($commands as $name => $info) {
-            $commandMap[$name] = $info['class'];
+        try {
+            $container = new \Tusk\Compiled\CompiledContainer();
+            $commands = \Tusk\Compiled\CompiledCommandRegistry::getCommands();
             
-            // To ensure the DI container can resolve it, we could inject it into the command if needed,
-            // but the container already resolves it automatically if the dependencies are mapped.
+            $commandMap = [];
+            foreach ($commands as $name => $info) {
+                $commandMap[$name] = $info['class'];
+                
+                // To ensure the DI container can resolve it, we could inject it into the command if needed,
+                // but the container already resolves it automatically if the dependencies are mapped.
+            }
+            
+            $commandLoader = new ContainerCommandLoader($container, $commandMap);
+            $application->setCommandLoader($commandLoader);
+        } catch (\Throwable $e) {
+            // Container could not be booted (e.g., missing .env or DB config).
+            // Fall back to framework-only commands.
         }
-        
-        $commandLoader = new ContainerCommandLoader($container, $commandMap);
-        $application->setCommandLoader($commandLoader);
     }
 }
 

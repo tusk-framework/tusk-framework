@@ -25,6 +25,6 @@ class ConsoleIntegrationTest extends TestCase
         $this->assertEquals(0, $returnCode, "Command failed with output: " . $outputStr);
         $this->assertStringContainsString('Tusk Framework CLI', $outputStr);
         $this->assertStringContainsString('make:controller', $outputStr);
-        $this->assertStringContainsString('make:model', $outputStr);
+        $this->assertStringContainsString('make:entity', $outputStr);
     }
 }

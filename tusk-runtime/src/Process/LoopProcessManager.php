@@ -4,8 +4,6 @@ namespace Tusk\Runtime\Process;
 
 class LoopProcessManager implements ProcessManagerInterface
 {
-    private array $workers = [];
-
     public function spawn(callable $workerLogic): int
     {
         // On Windows/Non-PCNTL, we can't truly fork.
