@@ -42,20 +42,42 @@ class Router implements RouterInterface
     {
         $method = strtoupper($method);
 
-        $route = $this->routes[$method][$uri] ?? null;
-
-        if (!$route) {
-            return null;
+        // 1. Try exact match first
+        if (isset($this->routes[$method][$uri])) {
+            return $this->buildMatch($this->routes[$method][$uri], []);
         }
 
+        // 2. Try pattern matching for routes with placeholders (e.g. /users/{id})
+        foreach ($this->routes[$method] ?? [] as $path => $route) {
+            $pattern = preg_replace('/\{([^}]+)\}/', '(?P<$1>[^/]+)', $path);
+            $pattern = '#^' . $pattern . '$#';
+
+            if (preg_match($pattern, $uri, $matches)) {
+                $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+                return $this->buildMatch($route, $params);
+            }
+        }
+
+        return null;
+    }
+
+    private function buildMatch(array $route, array $params): RouteMatch
+    {
         $handler = $route['handler'];
 
-        [$controller, $action] = is_array($handler) ? $handler : explode('@', $handler);
+        if (is_array($handler)) {
+            [$controller, $action] = $handler;
+        } else {
+            // Support 'ControllerClass@method' and invokable 'ControllerClass'
+            $segments = explode('@', $handler, 2);
+            $controller = $segments[0];
+            $action = $segments[1] ?? '__invoke';
+        }
 
         return new RouteMatch(
             controller: $controller,
             method: $action,
-            params: [],
+            params: $params,
             middleware: $route['middleware'] ?? [],
         );
     }

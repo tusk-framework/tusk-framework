@@ -87,12 +87,15 @@ class HttpServer
 
     private function parseRequest(string $raw): ServerRequest
     {
-        [$headerPart, $body] = explode("\r\n\r\n", $raw, 2);
+        $parts = explode("\r\n\r\n", $raw, 2);
+        $headerPart = $parts[0];
+        $body = $parts[1] ?? '';
+
         $lines = explode("\r\n", $headerPart);
-        $firstLine = array_shift($lines);
-        $parts = explode(' ', (string) $firstLine);
-        $method = $parts[0] !== '' ? $parts[0] : 'GET';
-        $uri = $parts[1] !== '' ? $parts[1] : '/';
+        $firstLine = (string) array_shift($lines);
+        $tokens = explode(' ', $firstLine);
+        $method = $tokens[0] !== '' ? $tokens[0] : 'GET';
+        $uri    = isset($tokens[1]) && $tokens[1] !== '' ? $tokens[1] : '/';
 
         $headers = [];
         foreach ($lines as $line) {
