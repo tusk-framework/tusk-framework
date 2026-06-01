@@ -35,13 +35,9 @@ class MakeControllerCommand extends \Symfony\Component\Console\Command\Command
 
         $generator = new StubGenerator;
 
-        // Let's create a temporary stub if it doesn't exist
         if (! file_exists($stub)) {
-            $dir = dirname($stub);
-            if (! is_dir($dir)) {
-                mkdir($dir, 0755, true);
-            }
-            file_put_contents($stub, "<?php\n\nnamespace {{ namespace }};\n\nuse Psr\Http\Message\ResponseInterface;\nuse Psr\Http\Message\ServerRequestInterface;\nuse Nyholm\Psr7\Response;\n\nclass {{ class }}\n{\n    public function index(ServerRequestInterface \$request): ResponseInterface\n    {\n        return new Response(200, [], 'Hello from {{ class }}');\n    }\n}\n");
+            $output->writeln("<error>Error: Stub not found at {$stub}</error>");
+            return self::FAILURE;
         }
 
         $success = $generator->generate($stub, $target, [

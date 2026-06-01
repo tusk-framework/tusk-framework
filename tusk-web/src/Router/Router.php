@@ -4,9 +4,8 @@ namespace Tusk\Web\Router;
 
 use ReflectionClass;
 use Tusk\Web\Attribute\Route;
-use Tusk\Web\Http\Request;
 
-class Router
+class Router implements RouterInterface
 {
     private array $routes = [];
 
@@ -33,17 +32,53 @@ class Router
     {
         foreach ($methods as $method) {
             $this->routes[strtoupper($method)][$path] = [
-                'handler' => $handler,
+                'handler'    => $handler,
                 'middleware' => $middleware,
             ];
         }
     }
 
-    public function match(Request $request): ?array
+    public function match(string $method, string $uri): ?RouteMatch
     {
-        $method = strtoupper($request->method);
-        $path = parse_url($request->uri, PHP_URL_PATH);
+        $method = strtoupper($method);
 
-        return $this->routes[$method][$path] ?? null;
+        // 1. Try exact match first
+        if (isset($this->routes[$method][$uri])) {
+            return $this->buildMatch($this->routes[$method][$uri], []);
+        }
+
+        // 2. Try pattern matching for routes with placeholders (e.g. /users/{id})
+        foreach ($this->routes[$method] ?? [] as $path => $route) {
+            $pattern = preg_replace('/\{([^}]+)\}/', '(?P<$1>[^/]+)', $path);
+            $pattern = '#^' . $pattern . '$#';
+
+            if (preg_match($pattern, $uri, $matches)) {
+                $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+                return $this->buildMatch($route, $params);
+            }
+        }
+
+        return null;
+    }
+
+    private function buildMatch(array $route, array $params): RouteMatch
+    {
+        $handler = $route['handler'];
+
+        if (is_array($handler)) {
+            [$controller, $action] = $handler;
+        } else {
+            // Support 'ControllerClass@method' and invokable 'ControllerClass'
+            $segments = explode('@', $handler, 2);
+            $controller = $segments[0];
+            $action = $segments[1] ?? '__invoke';
+        }
+
+        return new RouteMatch(
+            controller: $controller,
+            method: $action,
+            params: $params,
+            middleware: $route['middleware'] ?? [],
+        );
     }
 }

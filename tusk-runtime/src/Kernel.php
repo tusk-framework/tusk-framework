@@ -6,7 +6,8 @@ use Tusk\Contracts\Attributes\OnShutdown;
 use Tusk\Contracts\Attributes\OnStart;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Core\ApplicationInterface;
-use Tusk\Runtime\Supervisor\Supervisor;
+use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
+use Tusk\Web\HttpKernel;
 
 class Kernel implements ApplicationInterface
 {
@@ -14,7 +15,7 @@ class Kernel implements ApplicationInterface
 
     public function __construct(
         private ContainerInterface $container,
-        private \Tusk\Contracts\Runtime\RuntimeAdapterInterface $adapter
+        private RuntimeAdapterInterface $adapter
     ) {}
 
     public function start(): void
@@ -28,16 +29,10 @@ class Kernel implements ApplicationInterface
         // Run OnStart hooks (Global / Master Level)
         $this->container->runHooks(OnStart::class);
 
-        // Define the request handler logic
-        $requestHandler = function ($request) {
-            // Here, we would map the raw request to a PSR-7 Request,
-            // dispatch it through Middlewares/Router, and return a Response.
-            // For now, it's just a dummy simulation:
-            return "Response for request";
-        };
-
         // Delegate execution to the chosen Runtime Adapter (Native, RR, Swoole)
-        $this->adapter->start($this->container, $requestHandler);
+        // The adapter receives the HttpKernel as the request handler
+        $httpKernel = $this->container->get(HttpKernel::class);
+        $this->adapter->start($this->container, [$httpKernel, 'handle']);
 
         // Once the adapter stops, we run shutdown procedures
         $this->shutdown();

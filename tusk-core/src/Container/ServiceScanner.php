@@ -46,11 +46,23 @@ class ServiceScanner
                             $reflection = new ReflectionClass($className);
                             
                             if ($reflection->isInstantiable()) {
-                                $attributes = $reflection->getAttributes(Service::class);
+                                $serviceAttributes = $reflection->getAttributes(Service::class);
+                                $factoryAttributes = $reflection->getAttributes(\Tusk\Contracts\Attributes\Factory::class);
                                 
-                                if (!empty($attributes)) {
-                                    /** @var Service $attr */
-                                    $attr = $attributes[0]->newInstance();
+                                if (!empty($serviceAttributes) || !empty($factoryAttributes)) {
+                                    $isFactory = !empty($factoryAttributes);
+                                    
+                                    if ($isFactory) {
+                                        /** @var \Tusk\Contracts\Attributes\Factory $attr */
+                                        $attr = $factoryAttributes[0]->newInstance();
+                                        $provides = $attr->provides;
+                                        $scope = $attr->scope;
+                                    } else {
+                                        /** @var Service $attr */
+                                        $attr = $serviceAttributes[0]->newInstance();
+                                        $provides = $className;
+                                        $scope = $attr->scope;
+                                    }
                                     
                                     $dependencies = [];
                                     $constructor = $reflection->getConstructor();
@@ -66,7 +78,9 @@ class ServiceScanner
                                     
                                     $definitions[$className] = [
                                         'class' => $className,
-                                        'scope' => $attr->scope,
+                                        'provides' => $provides,
+                                        'is_factory' => $isFactory,
+                                        'scope' => $scope,
                                         'dependencies' => $dependencies,
                                         'interfaces' => $reflection->getInterfaceNames()
                                     ];

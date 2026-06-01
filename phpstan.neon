@@ -12,7 +12,3 @@ parameters:
         - tusk-web/src
     ignoreErrors:
         - identifier: while.alwaysTrue
-        - identifier: property.onlyWritten
-        - identifier: new.static
-        - identifier: nullCoalesce.offset
-        - identifier: nullCoalesce.variable

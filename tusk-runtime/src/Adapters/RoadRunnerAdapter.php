@@ -4,7 +4,10 @@ namespace Tusk\Runtime\Adapters;
 
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
-use Throwable;
+
+use Nyholm\Psr7\Factory\Psr17Factory;
+use Spiral\RoadRunner\Worker;
+use Spiral\RoadRunner\Http\PSR7Worker;
 
 class RoadRunnerAdapter implements RuntimeAdapterInterface
 {
@@ -13,33 +16,26 @@ class RoadRunnerAdapter implements RuntimeAdapterInterface
     public function start(ContainerInterface $container, callable $requestHandler): void
     {
         $this->running = true;
-        
-        // This is a stub for the actual Spiral\RoadRunner\Worker implementation
-        echo "[RoadRunner] Adapter started. Waiting for RPC/IPC messages...\n";
 
-        // Real implementation would use:
-        // $worker = \Spiral\RoadRunner\Worker::create();
-        // $psr7 = new \Spiral\RoadRunner\Http\PSR7Worker($worker, $psr17Factory, $psr17Factory, $psr17Factory);
-        
+        $worker = Worker::create();
+        $psr17Factory = new Psr17Factory();
+        $psr7 = new PSR7Worker($worker, $psr17Factory, $psr17Factory, $psr17Factory);
+
         while ($this->running) {
-            // $request = $psr7->waitRequest();
-            $request = null; // Simulation
-            
-            /** @phpstan-ignore-next-line */
-            if ($request === null) {
-                // In RoadRunner, null payload might mean stop or disconnect
-                break;
-            }
-
             try {
+                $request = $psr7->waitRequest();
+                if ($request === null) {
+                    break;
+                }
+
                 $response = $requestHandler($request);
-                // $psr7->respond($response);
-            } catch (Throwable $e) {
-                // $psr7->getWorker()->error((string)$e);
+                $psr7->respond($response);
+            } catch (\Throwable $e) {
+                $psr7->getWorker()->error((string) $e);
+            } finally {
+                // Garbage Collection and Service Isolation per request
+                $container->resetScope('request');
             }
-            
-            // Context Isolation: clean request scoped container services
-            $container->resetScope('request');
         }
     }
 
