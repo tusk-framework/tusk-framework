@@ -26,11 +26,15 @@ class ContainerCompiler
         
         $code .= "    private array \$singletonInstances = [];\n";
         $code .= "    private array \$requestInstances = [];\n\n";
+
+        $code .= "    public function instance(string \$id, object \$instance): void\n    {\n";
+        $code .= "        \$this->singletonInstances[\$id] = \$instance;\n    }\n\n";
         
         $code .= "    public function get(string \$id): object\n    {\n";
         $code .= "        if (isset(\$this->singletonInstances[\$id])) {\n";
         $code .= "            return \$this->singletonInstances[\$id];\n";
         $code .= "        }\n\n";
+        
         $code .= "        if (isset(\$this->requestInstances[\$id])) {\n";
         $code .= "            return \$this->requestInstances[\$id];\n";
         $code .= "        }\n\n";

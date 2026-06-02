@@ -56,7 +56,7 @@ class HttpKernel implements RequestHandlerInterface
 
                 $controller = $this->container->get($controllerClass);
                 $tuskRequest = new \Tusk\Web\Http\Request($request);
-                $response = $controller->$method($tuskRequest, ...array_values($this->match->params));
+                $response = $controller->$method(...[...array_values($this->match->params), $tuskRequest]);
 
                 if (is_array($response)) {
                     return new Response(200, ['Content-Type' => 'application/json'], (string) json_encode($response));
