@@ -26,6 +26,11 @@ class HttpKernel implements RequestHandlerInterface
         return $this;
     }
 
+    public function getContainer(): ContainerInterface
+    {
+        return $this->container;
+    }
+
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
         $method = $request->getMethod();
