@@ -5,6 +5,8 @@ namespace Tusk\Runtime\Adapters;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
 use Throwable;
+use Nyholm\Psr7\ServerRequest;
+use Nyholm\Psr7\Stream;
 
 class NativeLoopAdapter implements RuntimeAdapterInterface
 {
@@ -14,36 +16,81 @@ class NativeLoopAdapter implements RuntimeAdapterInterface
     {
         $this->running = true;
         
-        echo "[NativeLoop] Worker started (PID: " . getmypid() . ").\n";
+        // Unbuffer stdout to ensure Go receives data immediately
+        stream_set_write_buffer(STDOUT, 0);
 
         // Catch signals for graceful shutdown (requires ext-pcntl)
-        if (function_exists('pcntl_async_signals')) {
+        if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
             pcntl_async_signals(true);
-            pcntl_signal(SIGINT, [$this, 'stop']);
-            pcntl_signal(SIGTERM, [$this, 'stop']);
+            /** @phpstan-ignore-next-line */
+            pcntl_signal(2 /* SIGINT */, [$this, 'stop']);
+            /** @phpstan-ignore-next-line */
+            pcntl_signal(15 /* SIGTERM */, [$this, 'stop']);
         }
 
         while ($this->running) {
-            // Simulated request cycle for Native Loop
-            // In a real web context, NativeLoop might read from a socket or just process queue jobs
-            
-            $request = ['time' => time(), 'type' => 'simulated_native_request'];
-            
-            try {
-                $requestHandler($request);
-            } catch (Throwable $e) {
-                echo "[NativeLoop] Error handling request: " . $e->getMessage() . "\n";
+            $line = fgets(STDIN);
+            if ($line === false) {
+                break; // End of pipe
             }
-            
-            // Context Isolation: clean request scoped container services
-            $container->resetScope('request');
-            
-            // Prevent CPU thrashing in idle simulation
-            usleep(100000); // 100ms
+
+            $reqData = json_decode($line, true);
+            if (!$reqData) {
+                continue;
+            }
+
+            try {
+                $method = $reqData['method'] ?? 'GET';
+                $url = $reqData['url'] ?? '/';
+                $headers = $reqData['headers'] ?? [];
+                $bodyStr = $reqData['body'] ?? '';
+                
+                $bodyStream = Stream::create($bodyStr);
+                
+                $serverRequest = new ServerRequest(
+                    $method,
+                    $url,
+                    $headers,
+                    $bodyStream
+                );
+                
+                if (isset($reqData['query'])) {
+                    $serverRequest = $serverRequest->withQueryParams($reqData['query']);
+                }
+                if (isset($reqData['cookies'])) {
+                    $serverRequest = $serverRequest->withCookieParams($reqData['cookies']);
+                }
+                if (isset($reqData['parsedBody'])) {
+                    $serverRequest = $serverRequest->withParsedBody($reqData['parsedBody']);
+                }
+                // Uploaded files map requires creating UploadedFileInterface objects. 
+                // For simplicity in v0.1 we'll ignore or pass them as parsed body if necessary,
+                // since constructing PSR-7 uploaded files correctly requires complex array mappings.
+
+                /** @var \Psr\Http\Message\ResponseInterface $response */
+                $response = $requestHandler($serverRequest);
+                
+                $body = (string) $response->getBody();
+                $resData = [
+                    'status' => $response->getStatusCode(),
+                    'headers' => $response->getHeaders(),
+                    'body' => $body,
+                ];
+
+                fwrite(STDOUT, json_encode($resData) . "\n");
+
+            } catch (Throwable $e) {
+                $errorResponse = [
+                    'status' => 500,
+                    'headers' => ['Content-Type' => ['text/plain']],
+                    'body' => "Internal Server Error: " . $e->getMessage(),
+                ];
+                fwrite(STDOUT, json_encode($errorResponse) . "\n");
+            } finally {
+                // Context Isolation: clean request scoped container services
+                $container->resetScope('request');
+            }
         }
-        
-        /** @phpstan-ignore-next-line */
-        echo "[NativeLoop] Worker gracefully stopped.\n";
     }
 
     public function stop(): void
