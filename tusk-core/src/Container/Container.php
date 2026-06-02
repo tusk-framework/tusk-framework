@@ -38,6 +38,14 @@ class Container implements ContainerInterface
     }
 
     /**
+     * Bind an existing instance into the container.
+     */
+    public function instance(string $id, object $instance): void
+    {
+        $this->instances[$id] = $instance;
+    }
+
+    /**
      * Registers a class as a service.
      */
     public function register(string $className): void
