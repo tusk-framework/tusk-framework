@@ -18,4 +18,9 @@ class Response extends Psr7Response
     {
         return new self($status, ['Content-Type' => 'application/json'], (string) json_encode($data));
     }
+
+    public static function redirect(string $url, int $status = 302): ResponseInterface
+    {
+        return new self($status, ['Location' => $url]);
+    }
 }
