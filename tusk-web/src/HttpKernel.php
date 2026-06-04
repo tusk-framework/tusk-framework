@@ -94,7 +94,7 @@ class HttpKernel implements RequestHandlerInterface
             // Server Log
             error_log(sprintf("[%s] %s in %s:%d\nStack trace:\n%s", get_class($e), $e->getMessage(), $e->getFile(), $e->getLine(), $e->getTraceAsString()));
 
-            // Se for requisição pedindo JSON, retornar JSON
+            // If it is a request asking for JSON, return JSON
             if (str_contains($request->getHeaderLine('Accept'), 'application/json')) {
                 return new Response(500, ['Content-Type' => 'application/json'], json_encode([
                     'error' => 'Internal Server Error',
@@ -112,10 +112,10 @@ class HttpKernel implements RequestHandlerInterface
             if ($debug) {
                 $traceHtml = "
                     <div class='debug-info'>
-                        <h3>Detalhes do Erro (Modo Debug):</h3>
-                        <p><strong>Exceção:</strong> " . get_class($e) . "</p>
-                        <p><strong>Mensagem:</strong> " . htmlspecialchars($e->getMessage()) . "</p>
-                        <p><strong>Arquivo:</strong> " . $e->getFile() . " na linha " . $e->getLine() . "</p>
+                        <h3>Error Details (Debug Mode):</h3>
+                        <p><strong>Exception:</strong> " . get_class($e) . "</p>
+                        <p><strong>Message:</strong> " . htmlspecialchars($e->getMessage()) . "</p>
+                        <p><strong>File:</strong> " . $e->getFile() . " on line " . $e->getLine() . "</p>
                         <details>
                             <summary>Stack Trace</summary>
                             <pre>" . htmlspecialchars($e->getTraceAsString()) . "</pre>
@@ -135,7 +135,7 @@ class HttpKernel implements RequestHandlerInterface
 
             $html = <<<HTML
             <!DOCTYPE html>
-            <html lang="pt-BR">
+            <html lang="en-US">
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -190,9 +190,9 @@ class HttpKernel implements RequestHandlerInterface
             </head>
             <body>
                 <div class="error-container">
-                    <h1>Oops! Algo deu errado.</h1>
-                    <p>O servidor encontrou uma condição inesperada que o impediu de atender à requisição.</p>
-                    <p>A equipe técnica já foi notificada pelos logs do sistema.</p>
+                    <h1>Oops! Something went wrong.</h1>
+                    <p>The server encountered an unexpected condition that prevented it from fulfilling the request.</p>
+                    <p>The technical team has already been notified via system logs.</p>
                     {$traceHtml}
                 </div>
                 {$consoleJs}
