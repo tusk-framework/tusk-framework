@@ -6,6 +6,7 @@ namespace Tusk\Runtime\RoadRunner;
 
 use RoadRunner\Logger\Logger;
 use Spiral\Goridge\RPC\RPCInterface;
+use Spiral\RoadRunner\Jobs\Jobs;
 use Spiral\RoadRunner\KeyValue\Factory;
 use Spiral\RoadRunner\Metrics\Metrics;
 use Tusk\Contracts\Runtime\Capabilities\CapabilityProviderInterface;
@@ -25,7 +26,7 @@ final class RoadRunnerCapabilityProvider implements CapabilityProviderInterface
 
     public function supports(string $name): bool
     {
-        return in_array($name, ['kv', 'metrics', 'logger'], true);
+        return in_array($name, ['jobs', 'kv', 'metrics', 'logger'], true);
     }
 
     public function provide(string $name): object
@@ -41,6 +42,7 @@ final class RoadRunnerCapabilityProvider implements CapabilityProviderInterface
         $rpc = $this->rpc();
 
         return $this->capabilities[$name] = match ($name) {
+            'jobs' => new RoadRunnerJobs(new Jobs($rpc)),
             'kv' => new RoadRunnerKv((new Factory($rpc))->select($this->kvStore)),
             'metrics' => new RoadRunnerMetrics(new Metrics($rpc)),
             'logger' => new RoadRunnerLogger(new Logger($rpc)),

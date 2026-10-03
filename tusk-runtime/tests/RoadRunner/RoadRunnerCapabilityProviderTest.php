@@ -20,7 +20,7 @@ final class RoadRunnerCapabilityProviderTest extends TestCase
         self::assertTrue($provider->supports('kv'));
         self::assertTrue($provider->supports('metrics'));
         self::assertTrue($provider->supports('logger'));
-        self::assertFalse($provider->supports('jobs'));
+        self::assertTrue($provider->supports('jobs'));
 
         self::assertSame($provider->provide('kv'), $provider->provide('kv'));
         $provider->provide('metrics');
