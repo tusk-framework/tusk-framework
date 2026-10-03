@@ -45,6 +45,7 @@ final readonly class CreateUserRequest
 
 final class EmptyContainer implements ContainerInterface
 {
+    public function instance(string $id, object $instance): void {}
     public function get(string $id): object { throw new \RuntimeException("Missing {$id}"); }
     public function has(string $id): bool { return false; }
     public function runHooks(string $attributeClass): void {}

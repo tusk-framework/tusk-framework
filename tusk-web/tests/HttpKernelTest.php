@@ -75,6 +75,8 @@ final class TestContainer implements ContainerInterface
 {
     public function __construct(private array $services) {}
 
+    public function instance(string $id, object $instance): void {}
+
     public function get(string $id): object
     {
         return $this->services[$id] ?? throw new \RuntimeException("Missing test service {$id}");
