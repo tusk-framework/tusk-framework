@@ -6,7 +6,9 @@
     "require": {
         "php": "^8.2",
         "tusk/contracts": "self.version",
-        "tusk/core": "self.version"
+        "tusk/core": "self.version",
+        "nyholm/psr7": "^1.8",
+        "spiral/roadrunner-http": "^4.1"
     },
     "autoload": {
         "psr-4": {
