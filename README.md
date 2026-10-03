@@ -65,6 +65,24 @@ return [
 
 RoadRunner drivers, endpoints, pool limits, TLS, and logger output stay in `.rr.yaml`; `RR_RPC` is provided by the RoadRunner worker. The native adapter remains an explicit compatibility backend and does not emulate these capabilities.
 
+### Observability and worker diagnostics
+
+Observability is disabled by default and uses a no-op provider until explicitly enabled. Tusk instruments application, worker, request, and job lifecycle boundaries and can export traces and metrics through the OpenTelemetry OTLP HTTP exporter:
+
+```php
+return [
+    'observability' => [
+        'enabled' => true,
+        'service_name' => 'orders',
+        'exporter' => 'otlp',
+        'otlp' => ['endpoint' => 'https://otel-collector.example/v1/traces'],
+        'sample_ratio' => 0.25,
+    ],
+];
+```
+
+The snapshot intentionally excludes headers, cookies, bodies, uploads, secrets, tokens, and exception traces. Run `tusk runtime:diagnostics` for a local human-readable snapshot or `tusk runtime:diagnostics --json` for the stable machine-readable schema. The CLI reports the current process; remote worker health is a Tusk Engine control-plane concern.
+
 ---
 
 ## Getting Started
