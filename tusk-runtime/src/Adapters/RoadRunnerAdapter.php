@@ -39,11 +39,7 @@ class RoadRunnerAdapter implements RuntimeAdapterInterface
                 } catch (\Throwable $e) {
                     $psr7->getWorker()->error((string) $e);
                 } finally {
-                    try {
-                        $container->resetScope('request');
-                    } finally {
-                        gc_collect_cycles();
-                    }
+                    gc_collect_cycles();
                 }
             }
         } finally {

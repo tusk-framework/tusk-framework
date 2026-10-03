@@ -10,6 +10,7 @@ use ReflectionMethod;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Config\Env;
 use Tusk\Web\Http\HttpException;
+use Tusk\Web\Http\ArgumentBinder;
 use Tusk\Web\Http\MiddlewarePipeline;
 use Tusk\Web\Router\RouterInterface;
 
@@ -52,10 +53,11 @@ class HttpKernel implements RequestHandlerInterface
             }
 
             // Core handler that finally executes the Controller
-            $coreHandler = new class($this->container, $match) implements RequestHandlerInterface {
+            $coreHandler = new class($this->container, $match, $this->argumentBinder) implements RequestHandlerInterface {
                 public function __construct(
                     private ContainerInterface $container,
-                    private ?\Tusk\Web\Router\RouteMatch $match
+                    private ?\Tusk\Web\Router\RouteMatch $match,
+                    private ArgumentBinder $argumentBinder,
                 ) {}
 
                 public function handle(ServerRequestInterface $request): ResponseInterface

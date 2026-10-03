@@ -48,5 +48,6 @@ final class EmptyContainer implements ContainerInterface
     public function get(string $id): object { throw new \RuntimeException("Missing {$id}"); }
     public function has(string $id): bool { return false; }
     public function runHooks(string $attributeClass): void {}
+    public function runLifecycleHooks(string $event): void {}
     public function resetScope(string $scope): void {}
 }

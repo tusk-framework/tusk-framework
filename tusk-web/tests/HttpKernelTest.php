@@ -82,6 +82,7 @@ final class TestContainer implements ContainerInterface
 
     public function has(string $id): bool { return isset($this->services[$id]); }
     public function runHooks(string $attributeClass): void {}
+    public function runLifecycleHooks(string $event): void {}
     public function resetScope(string $scope): void {}
 }
 

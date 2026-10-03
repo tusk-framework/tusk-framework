@@ -19,6 +19,6 @@ cp .rr.yaml.example .rr.yaml
 rr serve -c .rr.yaml
 ```
 
-The worker command must not write human-readable output to `STDOUT`; RoadRunner owns that stream. Tusk sends startup diagnostics to `STDERR` and resets request-scoped services after every request.
+The worker command must not write human-readable output to `STDOUT`; RoadRunner owns that stream. Tusk's lifecycle manager starts and ends each request, including request-scope cleanup, independently of the selected transport.
 
 The native adapter is not part of the supported platform path and should not be used for new deployments.

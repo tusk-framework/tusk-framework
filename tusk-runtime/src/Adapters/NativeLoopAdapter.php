@@ -66,8 +66,6 @@ class NativeLoopAdapter implements RuntimeAdapterInterface
                 if ($serverRequest !== null) {
                     NdjsonRequestFactory::cleanup($serverRequest);
                 }
-                // Context Isolation: clean request scoped container services
-                $container->resetScope('request');
             }
         }
     }
