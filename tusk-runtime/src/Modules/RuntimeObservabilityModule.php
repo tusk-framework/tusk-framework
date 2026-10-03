@@ -27,7 +27,7 @@ final class RuntimeObservabilityModule implements RuntimeModuleInterface
         $collector = new WorkerDiagnosticsCollector;
         $provider = ObservabilityProviderFactory::create(
             $this->configuration,
-            static fn (\Throwable $exception): void => $collector->telemetryFailure($exception),
+            static fn (\Throwable $exception) => $collector->telemetryFailure($exception),
         );
 
         $container->instance(TelemetryProviderInterface::class, $provider);

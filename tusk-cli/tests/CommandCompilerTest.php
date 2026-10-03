@@ -31,4 +31,32 @@ PHP);
             rmdir($directory);
         }
     }
+
+    public function test_dependency_vendor_directories_are_not_scanned_as_commands(): void
+    {
+        $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'tusk-commands-'.bin2hex(random_bytes(4));
+        $vendor = $directory.DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR.'fixture';
+        mkdir($vendor, 0755, true);
+
+        $source = $vendor.DIRECTORY_SEPARATOR.'VendorCommand.php';
+        file_put_contents($source, <<<'PHP'
+<?php
+
+namespace Tusk\Cli\Tests\Fixtures\Vendor;
+
+use Tusk\Cli\Attribute\AsCommand;
+
+#[AsCommand('vendor-command')]
+final class VendorCommand {}
+PHP);
+
+        try {
+            self::assertSame([], (new CommandCompiler)->scan([$directory]));
+        } finally {
+            unlink($source);
+            rmdir($vendor);
+            rmdir(dirname($vendor));
+            rmdir($directory);
+        }
+    }
 }

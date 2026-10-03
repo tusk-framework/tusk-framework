@@ -13,7 +13,9 @@ use Tusk\Contracts\Attributes\OnStart;
 use Tusk\Contracts\Attributes\OnWorkerStart;
 use Tusk\Contracts\Attributes\OnWorkerStop;
 use RecursiveDirectoryIterator;
+use RecursiveCallbackFilterIterator;
 use RecursiveIteratorIterator;
+use FilesystemIterator;
 use SplFileInfo;
 use Throwable;
 
@@ -21,7 +23,7 @@ class ServiceScanner
 {
     /**
      * @param array<string> $directories
-     * @return array<string, array{scope: string, class: string, dependencies: array<string>, interfaces: array<string>, hooks: array<string, list<string>>}>
+     * @return array<string, array{scope: string, class: string, dependencies: array<string>, optional_dependencies: array<string>, interfaces: array<string>, hooks: array<string, list<string>>}>
      */
     public function scan(array $directories): array
     {
@@ -32,7 +34,10 @@ class ServiceScanner
             if (is_file($path)) {
                 $files[] = new SplFileInfo($path);
             } elseif (is_dir($path)) {
-                $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path));
+                $iterator = new RecursiveIteratorIterator(new RecursiveCallbackFilterIterator(
+                    new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+                    static fn (SplFileInfo $file): bool => ! ($file->isDir() && in_array($file->getFilename(), ['vendor', '.git', '.superpowers', '.tusk'], true)),
+                ));
                 foreach ($iterator as $file) {
                     $files[] = $file;
                 }
@@ -75,13 +80,18 @@ class ServiceScanner
                                     }
                                     
                                     $dependencies = [];
+                                    $optionalDependencies = [];
                                     $constructor = $reflection->getConstructor();
                                     
                                     if ($constructor) {
                                         foreach ($constructor->getParameters() as $param) {
                                             $type = $param->getType();
                                             if ($type instanceof ReflectionNamedType && !$type->isBuiltin()) {
-                                                $dependencies[] = $type->getName();
+                                                $dependency = $type->getName();
+                                                $dependencies[] = $dependency;
+                                                if ($type->allowsNull()) {
+                                                    $optionalDependencies[] = $dependency;
+                                                }
                                             }
                                         }
                                     }
@@ -111,6 +121,7 @@ class ServiceScanner
                                         'is_factory' => $isFactory,
                                         'scope' => $scope,
                                         'dependencies' => $dependencies,
+                                        'optional_dependencies' => $optionalDependencies,
                                         'interfaces' => $reflection->getInterfaceNames(),
                                         'hooks' => $hooks,
                                     ];

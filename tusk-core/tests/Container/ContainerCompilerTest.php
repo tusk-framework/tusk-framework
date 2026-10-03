@@ -53,4 +53,27 @@ class ContainerCompilerTest extends TestCase
         self::assertStringContainsString('$this->resolve_App_Services_LifecycleService()->stop();', $code);
         self::assertStringNotContainsString('new ReflectionClass', $code);
     }
+
+    public function test_compiles_nullable_dependencies_as_optional_resolutions(): void
+    {
+        $compiler = new ContainerCompiler();
+
+        $code = $compiler->compile([
+            'App\\Services\\OptionalService' => [
+                'class' => 'App\\Services\\OptionalService',
+                'provides' => 'App\\Services\\OptionalService',
+                'is_factory' => false,
+                'scope' => 'singleton',
+                'dependencies' => ['App\\Contracts\\OptionalDependency'],
+                'optional_dependencies' => ['App\\Contracts\\OptionalDependency'],
+                'interfaces' => [],
+                'hooks' => [],
+            ],
+        ], 'Tusk\\TestCompiled', 'TestCompiledContainer');
+
+        self::assertStringContainsString(
+            "(\$this->has('App\\\\Contracts\\\\OptionalDependency') ? \$this->get('App\\\\Contracts\\\\OptionalDependency') : null)",
+            $code,
+        );
+    }
 }

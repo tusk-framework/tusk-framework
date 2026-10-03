@@ -3,7 +3,9 @@
 namespace Tusk\Cli;
 
 use RecursiveDirectoryIterator;
+use RecursiveCallbackFilterIterator;
 use RecursiveIteratorIterator;
+use FilesystemIterator;
 use ReflectionClass;
 use ReflectionException;
 use SplFileInfo;
@@ -25,7 +27,10 @@ class CommandCompiler
             if (is_file($path)) {
                 $files[] = new SplFileInfo($path);
             } elseif (is_dir($path)) {
-                $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path));
+                $iterator = new RecursiveIteratorIterator(new RecursiveCallbackFilterIterator(
+                    new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+                    static fn (SplFileInfo $file): bool => ! ($file->isDir() && in_array($file->getFilename(), ['vendor', '.git', '.superpowers', '.tusk'], true)),
+                ));
                 foreach ($iterator as $file) {
                     $files[] = $file;
                 }

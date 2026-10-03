@@ -41,4 +41,42 @@ PHP);
             rmdir($directory);
         }
     }
+
+    public function test_dependency_vendor_directories_are_not_scanned_as_routes(): void
+    {
+        $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'tusk-routes-'.bin2hex(random_bytes(4));
+        $vendor = $directory.DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR.'fixture';
+        mkdir($vendor, 0755, true);
+
+        $source = $vendor.DIRECTORY_SEPARATOR.'VendorController.php';
+        file_put_contents($source, <<<'PHP'
+<?php
+
+namespace Tusk\Web\Tests\Fixtures\Vendor;
+
+use Tusk\Web\Attribute\Controller;
+use Tusk\Web\Attribute\Get;
+
+#[Controller]
+final class VendorController
+{
+    #[Get('/vendor')]
+    public function index(): string
+    {
+        return 'vendor';
+    }
+}
+PHP);
+
+        try {
+            $routes = (new RouteCompiler)->scan([$directory]);
+
+            self::assertSame([], $routes['GET']);
+        } finally {
+            unlink($source);
+            rmdir($vendor);
+            rmdir(dirname($vendor));
+            rmdir($directory);
+        }
+    }
 }

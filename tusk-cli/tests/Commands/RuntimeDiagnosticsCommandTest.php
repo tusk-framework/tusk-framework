@@ -50,6 +50,17 @@ final class RuntimeDiagnosticsCommandTest extends TestCase
         self::assertArrayNotHasKey('body', $data);
         self::assertSame(array_keys($data), array_keys((new FixedDiagnostics)->snapshot()->toArray()));
     }
+
+    public function test_command_has_a_standalone_diagnostics_fallback_without_a_runtime_module(): void
+    {
+        $tester = new CommandTester(new RuntimeDiagnosticsCommand);
+
+        $tester->execute(['--json' => true]);
+
+        $data = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('standalone', $data['lifecycle_state']);
+        self::assertSame('unknown', $data['runtime']);
+    }
 }
 
 final class FixedDiagnostics implements WorkerDiagnosticsInterface

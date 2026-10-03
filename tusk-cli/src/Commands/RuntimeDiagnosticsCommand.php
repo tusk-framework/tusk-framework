@@ -11,14 +11,18 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Tusk\Cli\Attribute\AsCommand;
 use Tusk\Contracts\Attributes\Service;
 use Tusk\Contracts\Observability\WorkerDiagnosticsInterface;
+use Tusk\Runtime\Observability\WorkerDiagnosticsCollector;
 
 #[Service]
 #[AsCommand('runtime:diagnostics', 'Show persistent runtime diagnostics')]
 final class RuntimeDiagnosticsCommand extends Command
 {
-    public function __construct(private readonly WorkerDiagnosticsInterface $diagnostics)
+    private readonly WorkerDiagnosticsInterface $diagnostics;
+
+    public function __construct(?WorkerDiagnosticsInterface $diagnostics = null)
     {
         parent::__construct();
+        $this->diagnostics = $diagnostics ?? new WorkerDiagnosticsCollector;
     }
 
     protected function configure(): void

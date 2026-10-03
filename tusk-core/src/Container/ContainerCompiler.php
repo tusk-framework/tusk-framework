@@ -60,7 +60,13 @@ class ContainerCompiler
             $isFactory = $def['is_factory'] ?? false;
             $scope = $def['scope'] ?? 'singleton';
             $deps = $def['dependencies'] ?? [];
-            $depString = implode(', ', array_map(fn (string $dependency): string => '$this->get('.var_export($dependency, true).')', $deps));
+            $optionalDependencies = $def['optional_dependencies'] ?? [];
+            $depString = implode(', ', array_map(
+                fn (string $dependency): string => in_array($dependency, $optionalDependencies, true)
+                    ? '($this->has('.var_export($dependency, true).') ? $this->get('.var_export($dependency, true).') : null)'
+                    : '$this->get('.var_export($dependency, true).')',
+                $deps,
+            ));
             $methodName = 'resolve_'.$this->sanitizeName($class);
 
             $code .= "    private function {$methodName}(): object\n    {\n";
