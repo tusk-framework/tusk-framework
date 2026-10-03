@@ -56,9 +56,16 @@ class RunCommand extends Command
             }
         }
 
-        $configuration = RuntimeConfiguration::fromArray(is_array($bootstrap) ? $bootstrap : []);
-        $runtime = $requestedRuntime ?? $configuration->adapter();
-        $adapter = RuntimeAdapterFactory::create($runtime);
+        $bootstrapConfig = is_array($bootstrap) ? $bootstrap : [];
+        if ($requestedRuntime !== null) {
+            $bootstrapConfig['runtime'] = array_replace(
+                is_array($bootstrapConfig['runtime'] ?? null) ? $bootstrapConfig['runtime'] : [],
+                ['adapter' => $requestedRuntime],
+            );
+        }
+
+        $configuration = RuntimeConfiguration::fromArray($bootstrapConfig);
+        $adapter = RuntimeAdapterFactory::create($configuration->adapter());
 
         if ($adapter->getName() === 'roadrunner') {
             fwrite(STDERR, "Tusk Framework v0.1.0\nStarting application: {$file}\nRuntime: roadrunner\n");

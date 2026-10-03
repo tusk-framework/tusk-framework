@@ -374,4 +374,3 @@
 - [ ] **Step 4: Update issue #17 and open the PR**
 
   The PR body must use the repository template, link issue #17, list the capability matrix, describe the no-live-RoadRunner test strategy, document the missing/required PHP extensions if relevant, and identify the reviewer focus areas.
-
