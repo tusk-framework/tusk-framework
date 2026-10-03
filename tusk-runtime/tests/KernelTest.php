@@ -7,6 +7,7 @@ use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Runtime\LifecycleManagerInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
 use Tusk\Runtime\Kernel;
+use Tusk\Runtime\Modules\RuntimeModuleRegistry;
 
 final class KernelTestContainer implements ContainerInterface
 {
@@ -112,6 +113,32 @@ final class KernelTestAdapter implements RuntimeAdapterInterface
     }
 }
 
+final class KernelTestRuntimeModule implements \Tusk\Contracts\Runtime\Modules\RuntimeModuleInterface
+{
+    /** @var list<string> */
+    public array $events = [];
+
+    public function name(): string
+    {
+        return 'test';
+    }
+
+    public function register(ContainerInterface $container): void
+    {
+        $this->events[] = 'register';
+    }
+
+    public function start(): void
+    {
+        $this->events[] = 'start';
+    }
+
+    public function stop(): void
+    {
+        $this->events[] = 'stop';
+    }
+}
+
 final class KernelTest extends TestCase
 {
     public function test_kernel_owns_application_and_worker_lifecycle_around_adapter(): void
@@ -162,5 +189,29 @@ final class KernelTest extends TestCase
                 'application.stop',
             ], $lifecycle->events);
         }
+    }
+
+    public function test_kernel_starts_and_stops_runtime_modules_around_the_adapter(): void
+    {
+        $lifecycle = new KernelTestLifecycleManager();
+        $module = new KernelTestRuntimeModule();
+        $kernel = new Kernel(
+            new KernelTestContainer(),
+            new KernelTestAdapter(),
+            $lifecycle,
+            new RuntimeModuleRegistry([$module]),
+        );
+
+        $kernel->start();
+
+        self::assertSame(['start', 'stop'], $module->events);
+        self::assertSame([
+            'application.start',
+            'worker.start',
+            'request.start',
+            'request.end',
+            'worker.stop',
+            'application.stop',
+        ], $lifecycle->events);
     }
 }
