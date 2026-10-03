@@ -22,6 +22,11 @@ interface ContainerInterface
     public function runHooks(string $attributeClass): void;
 
     /**
+     * Executes the compiled lifecycle hooks for an event.
+     */
+    public function runLifecycleHooks(string $event): void;
+
+    /**
      * Resets all services within a specific scope.
      */
     public function resetScope(string $scope): void;
