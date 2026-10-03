@@ -32,8 +32,9 @@ final class DatabaseQueueTest extends TestCase
 
     public function test_two_consumers_do_not_claim_the_same_job(): void
     {
-        $firstConnection = DriverManager::getConnection(['url' => 'sqlite://' . $this->databasePath]);
-        $secondConnection = DriverManager::getConnection(['url' => 'sqlite://' . $this->databasePath]);
+        $connectionParameters = ['driver' => 'pdo_sqlite', 'path' => $this->databasePath];
+        $firstConnection = DriverManager::getConnection($connectionParameters);
+        $secondConnection = DriverManager::getConnection($connectionParameters);
         $firstQueue = new DatabaseQueue($firstConnection);
         $secondQueue = new DatabaseQueue($secondConnection);
 
@@ -48,7 +49,10 @@ final class DatabaseQueueTest extends TestCase
 
     public function test_stale_processing_jobs_can_be_reclaimed(): void
     {
-        $connection = DriverManager::getConnection(['url' => 'sqlite://' . $this->databasePath]);
+        $connection = DriverManager::getConnection([
+            'driver' => 'pdo_sqlite',
+            'path' => $this->databasePath,
+        ]);
         $queue = new DatabaseQueue($connection, 60);
         $queue->push('ExampleJob', ['value' => 1]);
 
