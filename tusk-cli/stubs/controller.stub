@@ -2,14 +2,17 @@
 
 namespace {{ namespace }};
 
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Nyholm\Psr7\Response;
+use Tusk\Web\Attribute\Controller;
+use Tusk\Web\Attribute\Get;
 
+#[Controller('/{{ route }}')]
 class {{ class }}
 {
-    public function index(ServerRequestInterface $request): ResponseInterface
+    #[Get]
+    public function index(): array
     {
-        return new Response(200, [], 'Hello from {{ class }}');
+        return [
+            'message' => 'Hello from {{ class }}',
+        ];
     }
 }

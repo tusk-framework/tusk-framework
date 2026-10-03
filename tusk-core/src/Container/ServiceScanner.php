@@ -6,6 +6,12 @@ use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionException;
 use Tusk\Contracts\Attributes\Service;
+use Tusk\Contracts\Attributes\OnRequestEnd;
+use Tusk\Contracts\Attributes\OnRequestStart;
+use Tusk\Contracts\Attributes\OnShutdown;
+use Tusk\Contracts\Attributes\OnStart;
+use Tusk\Contracts\Attributes\OnWorkerStart;
+use Tusk\Contracts\Attributes\OnWorkerStop;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use SplFileInfo;
@@ -15,7 +21,7 @@ class ServiceScanner
 {
     /**
      * @param array<string> $directories
-     * @return array<string, array{scope: string, class: string, dependencies: array<string>, interfaces: array<string>}>
+     * @return array<string, array{scope: string, class: string, dependencies: array<string>, interfaces: array<string>, hooks: array<string, list<string>>}>
      */
     public function scan(array $directories): array
     {
@@ -75,6 +81,25 @@ class ServiceScanner
                                             }
                                         }
                                     }
+
+                                    $hooks = [];
+                                    $hookAttributes = [
+                                        OnStart::class => 'application.start',
+                                        OnWorkerStart::class => 'worker.start',
+                                        OnRequestStart::class => 'request.start',
+                                        OnRequestEnd::class => 'request.end',
+                                        OnWorkerStop::class => 'worker.stop',
+                                        OnShutdown::class => 'application.stop',
+                                    ];
+
+                                    foreach ($reflection->getMethods() as $method) {
+                                        foreach ($hookAttributes as $attributeClass => $event) {
+                                            if (! empty($method->getAttributes($attributeClass))) {
+                                                $hooks[$event] ??= [];
+                                                $hooks[$event][] = $method->getName();
+                                            }
+                                        }
+                                    }
                                     
                                     $definitions[$className] = [
                                         'class' => $className,
@@ -82,7 +107,8 @@ class ServiceScanner
                                         'is_factory' => $isFactory,
                                         'scope' => $scope,
                                         'dependencies' => $dependencies,
-                                        'interfaces' => $reflection->getInterfaceNames()
+                                        'interfaces' => $reflection->getInterfaceNames(),
+                                        'hooks' => $hooks,
                                     ];
                                 }
                             }

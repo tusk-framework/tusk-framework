@@ -1,11 +1,24 @@
 # Tusk Runtime
 
-The **Tusk Runtime** is the PHP-side adapter for persistent application servers like **RoadRunner** or **Swoole**. It transforms the standard request-response cycle into a high-performance persistent process.
+The **Tusk Runtime** is the PHP-side integration layer for RoadRunner persistent workers. The legacy native NDJSON loop is retained only as a migration boundary while the Tusk Engine moves its control-plane capabilities above RoadRunner.
 
 ## Features
-- **Server Adapters**: Bridges for RoadRunner and Swoole.
+- **Server Adapter**: RoadRunner and its PSR-7 worker protocol.
 - **Worker Management**: PSR-compliant request handling within a long-lived process.
 - **Kernel Bridge**: Seamlessly connects the application server to the Tusk application kernel.
 
 ## Installation
 Included by default with the Tusk Framework.
+
+## RoadRunner
+
+Copy `.rr.yaml.example` to `.rr.yaml`, adjust the worker command and limits, then start RoadRunner:
+
+```bash
+cp .rr.yaml.example .rr.yaml
+rr serve -c .rr.yaml
+```
+
+The worker command must not write human-readable output to `STDOUT`; RoadRunner owns that stream. Tusk's lifecycle manager starts and ends each request, including request-scope cleanup, independently of the selected transport.
+
+The native adapter is not part of the supported platform path and should not be used for new deployments.

@@ -31,7 +31,7 @@ The Tusk Framework is a monorepo of specialized packages that can be used togeth
 | [**tusk/core**](tusk-core/) | IoC Container and Application Lifecycle. |
 | [**tusk/web**](tusk-web/) | Routing, Middleware, and HTTP abstractions. |
 | [**tusk/data**](tusk-data/) | Repository Pattern and Database Abstraction. |
-| [**tusk/runtime**](tusk-runtime/) | IPC Bridge and Worker Loop implementation. |
+| [**tusk/runtime**](tusk-runtime/) | RoadRunner persistent worker integration. |
 | [**tusk/contracts**](tusk-contracts/) | Shared interfaces and base abstractions. |
 | [**tusk/security**](tusk-security/) | Authentication and Authorization toolkit. |
 | [**tusk/cloud**](tusk-cloud/) | Resilience (Circuit Breakers) and Discovery. |
@@ -41,7 +41,7 @@ The Tusk Framework is a monorepo of specialized packages that can be used togeth
 
 ## Getting Started
 
-Since Tusk is designed for persistent runtimes, its entry point is a **Worker Loop**.
+Since Tusk is designed for persistent runtimes, its supported entry point is a **RoadRunner worker loop**. The framework keeps request-scoped state isolated; the legacy native loop is retained only as a migration boundary.
 
 ### 1. Installation
 ```bash

@@ -5,6 +5,12 @@ namespace Tusk\Core\Container;
 use ReflectionClass;
 use ReflectionException;
 use RuntimeException;
+use Tusk\Contracts\Attributes\OnRequestEnd;
+use Tusk\Contracts\Attributes\OnRequestStart;
+use Tusk\Contracts\Attributes\OnShutdown;
+use Tusk\Contracts\Attributes\OnStart;
+use Tusk\Contracts\Attributes\OnWorkerStart;
+use Tusk\Contracts\Attributes\OnWorkerStop;
 use Tusk\Contracts\Attributes\Service;
 use Tusk\Contracts\Container\ContainerInterface;
 
@@ -18,6 +24,9 @@ class Container implements ContainerInterface
 
     /** @var array<string, string> */
     private array $scopes = [];
+
+    /** @var array<string, array<string, list<string>>> */
+    private array $hooks = [];
 
     public function get(string $id): object
     {
@@ -68,6 +77,7 @@ class Container implements ContainerInterface
 
         $this->definitions[$className] = $className;
         $this->scopes[$className] = $scope;
+        $this->hooks = array_replace_recursive($this->hooks, [$className => $this->discoverHooks($reflection)]);
 
         // Also register by interface if applicable
         foreach ($reflection->getInterfaceNames() as $interface) {
@@ -78,10 +88,11 @@ class Container implements ContainerInterface
     /**
      * Set definitions and scopes manually (e.g., from a cache file).
      */
-    public function setDefinitions(array $definitions, array $scopes): void
+    public function setDefinitions(array $definitions, array $scopes, array $hooks = []): void
     {
         $this->definitions = $definitions;
         $this->scopes = $scopes;
+        $this->hooks = $hooks;
     }
 
     /**
@@ -92,6 +103,7 @@ class Container implements ContainerInterface
         return [
             'definitions' => $this->definitions,
             'scopes' => $this->scopes,
+            'hooks' => $this->hooks,
         ];
     }
 
@@ -101,19 +113,10 @@ class Container implements ContainerInterface
      */
     public function resetScope(string $scope): void
     {
-        foreach ($this->scopes as $className => $serviceScope) {
+        foreach ($this->definitions as $id => $className) {
+            $serviceScope = $this->scopes[$className] ?? 'singleton';
             if ($serviceScope === $scope) {
-                unset($this->instances[$className]);
-
-                // Also unset interface aliases
-                try {
-                    $reflection = new ReflectionClass($className);
-                    foreach ($reflection->getInterfaceNames() as $interface) {
-                        unset($this->instances[$interface]);
-                    }
-                } catch (ReflectionException $e) {
-                    // Class should exist if instance existed, but suppress just in case
-                }
+                unset($this->instances[$id]);
             }
         }
     }
@@ -159,9 +162,11 @@ class Container implements ContainerInterface
         if ($scope !== 'prototype') {
             $this->instances[$className] = $instance;
 
-            // Update interface mappings to point to the instance
-            foreach ($reflection->getInterfaceNames() as $interface) {
-                $this->instances[$interface] = $instance;
+            // Update all registered aliases to point to the same instance.
+            foreach ($this->definitions as $id => $registeredClass) {
+                if ($registeredClass === $className) {
+                    $this->instances[$id] = $instance;
+                }
             }
         }
 
@@ -170,6 +175,22 @@ class Container implements ContainerInterface
 
     public function runHooks(string $attributeClass): void
     {
+        $event = match ($attributeClass) {
+            OnStart::class => 'application.start',
+            OnWorkerStart::class => 'worker.start',
+            OnRequestStart::class => 'request.start',
+            OnRequestEnd::class => 'request.end',
+            OnWorkerStop::class => 'worker.stop',
+            OnShutdown::class => 'application.stop',
+            default => null,
+        };
+
+        if ($event !== null) {
+            $this->runLifecycleHooks($event);
+
+            return;
+        }
+
         foreach ($this->instances as $instance) {
             $reflection = new ReflectionClass($instance);
             foreach ($reflection->getMethods() as $method) {
@@ -178,5 +199,51 @@ class Container implements ContainerInterface
                 }
             }
         }
+    }
+
+    public function runLifecycleHooks(string $event): void
+    {
+        $firstFailure = null;
+
+        foreach ($this->hooks as $serviceClass => $events) {
+            foreach ($events[$event] ?? [] as $methodName) {
+                try {
+                    $this->get($serviceClass)->{$methodName}();
+                } catch (\Throwable $exception) {
+                    $firstFailure ??= $exception;
+                }
+            }
+        }
+
+        if ($firstFailure !== null) {
+            throw $firstFailure;
+        }
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private function discoverHooks(ReflectionClass $reflection): array
+    {
+        $hooks = [];
+        $hookAttributes = [
+            OnStart::class => 'application.start',
+            OnWorkerStart::class => 'worker.start',
+            OnRequestStart::class => 'request.start',
+            OnRequestEnd::class => 'request.end',
+            OnWorkerStop::class => 'worker.stop',
+            OnShutdown::class => 'application.stop',
+        ];
+
+        foreach ($reflection->getMethods() as $method) {
+            foreach ($hookAttributes as $attributeClass => $event) {
+                if (! empty($method->getAttributes($attributeClass))) {
+                    $hooks[$event] ??= [];
+                    $hooks[$event][] = $method->getName();
+                }
+            }
+        }
+
+        return $hooks;
     }
 }

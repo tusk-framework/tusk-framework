@@ -2,11 +2,11 @@
 
 namespace Tusk\Runtime\Adapters;
 
+use JsonException;
+use Psr\Http\Message\ResponseInterface;
+use Throwable;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
-use Throwable;
-use Nyholm\Psr7\ServerRequest;
-use Nyholm\Psr7\Stream;
 
 class NativeLoopAdapter implements RuntimeAdapterInterface
 {
@@ -15,16 +15,14 @@ class NativeLoopAdapter implements RuntimeAdapterInterface
     public function start(ContainerInterface $container, callable $requestHandler): void
     {
         $this->running = true;
-        
+
         // Unbuffer stdout to ensure Go receives data immediately
         stream_set_write_buffer(STDOUT, 0);
 
         // Catch signals for graceful shutdown (requires ext-pcntl)
         if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
             pcntl_async_signals(true);
-            /** @phpstan-ignore-next-line */
             pcntl_signal(2 /* SIGINT */, [$this, 'stop']);
-            /** @phpstan-ignore-next-line */
             pcntl_signal(15 /* SIGTERM */, [$this, 'stop']);
         }
 
@@ -34,61 +32,39 @@ class NativeLoopAdapter implements RuntimeAdapterInterface
                 break; // End of pipe
             }
 
-            $reqData = json_decode($line, true);
-            if (!$reqData) {
-                continue;
-            }
-
+            $serverRequest = null;
             try {
-                $method = $reqData['method'] ?? 'GET';
-                $url = $reqData['url'] ?? '/';
-                $headers = $reqData['headers'] ?? [];
-                $bodyStr = $reqData['body'] ?? '';
-                
-                $bodyStream = Stream::create($bodyStr);
-                
-                $serverRequest = new ServerRequest(
-                    $method,
-                    $url,
-                    $headers,
-                    $bodyStream
-                );
-                
-                if (isset($reqData['query'])) {
-                    $serverRequest = $serverRequest->withQueryParams($reqData['query']);
+                $reqData = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+                if (! is_array($reqData)) {
+                    throw new \InvalidArgumentException('NDJSON request must be an object');
                 }
-                if (isset($reqData['cookies'])) {
-                    $serverRequest = $serverRequest->withCookieParams($reqData['cookies']);
-                }
-                if (isset($reqData['parsedBody'])) {
-                    $serverRequest = $serverRequest->withParsedBody($reqData['parsedBody']);
-                }
-                // Uploaded files map requires creating UploadedFileInterface objects. 
-                // For simplicity in v0.1 we'll ignore or pass them as parsed body if necessary,
-                // since constructing PSR-7 uploaded files correctly requires complex array mappings.
+                $serverRequest = NdjsonRequestFactory::fromArray($reqData);
 
-                /** @var \Psr\Http\Message\ResponseInterface $response */
+                /** @var ResponseInterface $response */
                 $response = $requestHandler($serverRequest);
-                
-                $body = (string) $response->getBody();
-                $resData = [
-                    'status' => $response->getStatusCode(),
-                    'headers' => $response->getHeaders(),
-                    'body' => $body,
-                ];
 
-                fwrite(STDOUT, json_encode($resData) . "\n");
+                fwrite(STDOUT, json_encode(NdjsonRequestFactory::toArray($response), JSON_THROW_ON_ERROR)."\n");
+
+            } catch (JsonException|\InvalidArgumentException $e) {
+                error_log('Invalid NDJSON request: '.$e->getMessage());
+                fwrite(STDOUT, json_encode([
+                    'status' => 400,
+                    'headers' => ['Content-Type' => ['application/json']],
+                    'body' => '{"error":"Bad Request"}',
+                ], JSON_THROW_ON_ERROR)."\n");
 
             } catch (Throwable $e) {
+                error_log('Native worker request failed: '.$e->getMessage());
                 $errorResponse = [
                     'status' => 500,
-                    'headers' => ['Content-Type' => ['text/plain']],
-                    'body' => "Internal Server Error: " . $e->getMessage(),
+                    'headers' => ['Content-Type' => ['application/json']],
+                    'body' => '{"error":"Internal Server Error"}',
                 ];
-                fwrite(STDOUT, json_encode($errorResponse) . "\n");
+                fwrite(STDOUT, json_encode($errorResponse, JSON_THROW_ON_ERROR)."\n");
             } finally {
-                // Context Isolation: clean request scoped container services
-                $container->resetScope('request');
+                if ($serverRequest !== null) {
+                    NdjsonRequestFactory::cleanup($serverRequest);
+                }
             }
         }
     }

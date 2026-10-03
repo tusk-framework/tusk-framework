@@ -4,7 +4,11 @@
     "type": "library",
     "license": "MIT",
     "require": {
-        "php": "^8.2"
+        "php": "^8.2",
+        "symfony/console": "^7.0",
+        "tusk/contracts": "self.version",
+        "tusk/core": "self.version",
+        "tusk/runtime": "self.version"
     },
     "autoload": {
         "psr-4": {

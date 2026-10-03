@@ -24,6 +24,7 @@ class MakeControllerCommand extends \Symfony\Component\Console\Command\Command
     {
         $name = $input->getArgument('name');
         $className = basename(str_replace('\\', '/', $name));
+        $route = strtolower(preg_replace('/Controller$/', '', $className) ?: $className);
         $namespace = 'App\\Http\\Controllers'; // Defaulting for simple usage
         
         if (str_contains($name, '\\')) {
@@ -43,6 +44,7 @@ class MakeControllerCommand extends \Symfony\Component\Console\Command\Command
         $success = $generator->generate($stub, $target, [
             'namespace' => $namespace,
             'class' => $className,
+            'route' => $route,
         ]);
 
         if ($success) {

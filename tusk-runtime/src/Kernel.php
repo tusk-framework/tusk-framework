@@ -2,21 +2,25 @@
 
 namespace Tusk\Runtime;
 
-use Tusk\Contracts\Attributes\OnShutdown;
-use Tusk\Contracts\Attributes\OnStart;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Core\ApplicationInterface;
+use Tusk\Contracts\Runtime\LifecycleManagerInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
 use Tusk\Web\HttpKernel;
 
-class Kernel implements ApplicationInterface
+final class Kernel implements ApplicationInterface
 {
     private bool $running = false;
 
+    private readonly LifecycleManagerInterface $lifecycle;
+
     public function __construct(
-        private ContainerInterface $container,
-        private RuntimeAdapterInterface $adapter
-    ) {}
+        private readonly ContainerInterface $container,
+        private readonly RuntimeAdapterInterface $adapter,
+        ?LifecycleManagerInterface $lifecycle = null,
+    ) {
+        $this->lifecycle = $lifecycle ?? new LifecycleManager($container);
+    }
 
     public function start(): void
     {
@@ -26,16 +30,23 @@ class Kernel implements ApplicationInterface
 
         $this->running = true;
 
-        // Run OnStart hooks (Global / Master Level)
-        $this->container->runHooks(OnStart::class);
+        try {
+            $this->lifecycle->applicationStart();
+            $this->lifecycle->workerStart();
 
-        // Delegate execution to the chosen Runtime Adapter (Native, RR, Swoole)
-        // The adapter receives the HttpKernel as the request handler
-        $httpKernel = $this->container->get(HttpKernel::class);
-        $this->adapter->start($this->container, [$httpKernel, 'handle']);
-
-        // Once the adapter stops, we run shutdown procedures
-        $this->shutdown();
+            $httpKernel = $this->container->get(HttpKernel::class);
+            $this->adapter->start($this->container, $this->lifecycle->wrap([$httpKernel, 'handle']));
+        } finally {
+            try {
+                $this->lifecycle->workerStop();
+            } finally {
+                try {
+                    $this->lifecycle->applicationStop();
+                } finally {
+                    $this->running = false;
+                }
+            }
+        }
     }
 
     public function shutdown(): void
@@ -44,15 +55,16 @@ class Kernel implements ApplicationInterface
             return;
         }
 
-        $this->running = false;
-
-        // Run OnShutdown hooks
-        $this->container->runHooks(OnShutdown::class);
+        try {
+            $this->lifecycle->workerStop();
+        } finally {
+            $this->lifecycle->applicationStop();
+            $this->running = false;
+        }
     }
 
     public function stop(): void
     {
         $this->adapter->stop();
-        $this->running = false;
     }
 }

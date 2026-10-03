@@ -17,7 +17,8 @@ class JwtGuard implements GuardInterface
     public function __construct(
         private UserProviderInterface $provider,
         private Request $request,
-        private string $algo = 'HS256'
+        private string $algo = 'HS256',
+        private bool $allowQueryToken = false
     ) {}
 
     public function check(): bool
@@ -38,13 +39,16 @@ class JwtGuard implements GuardInterface
         }
 
         try {
-            $secret = Env::get('JWT_SECRET', 'default_secret');
+            $secret = Env::get('JWT_SECRET');
+            if (! is_string($secret) || strlen($secret) < 32) {
+                return null;
+            }
             $decoded = JWT::decode($token, new Key($secret, $this->algo));
 
             if (isset($decoded->sub)) {
                 $this->user = $this->provider->loadByIdentifier((string) $decoded->sub);
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             // Token is invalid or expired
             return null;
         }
@@ -60,10 +64,10 @@ class JwtGuard implements GuardInterface
     private function getTokenForRequest(): ?string
     {
         $header = $this->request->header('Authorization');
-        if ($header && str_starts_with($header, 'Bearer ')) {
-            return substr($header, 7);
+        if ($header && strncasecmp($header, 'Bearer ', 7) === 0) {
+            return trim(substr($header, 7));
         }
 
-        return $this->request->get('token');
+        return $this->allowQueryToken ? $this->request->get('token') : null;
     }
 }

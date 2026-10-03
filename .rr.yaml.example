@@ -1,0 +1,22 @@
+version: "3"
+
+server:
+  # Tusk starts the persistent PHP application and connects through pipes.
+  command: "php vendor/bin/tusk run app.php --runtime=roadrunner"
+  relay: pipes
+
+http:
+  address: 127.0.0.1:8080
+  max_request_size: 10
+  pool:
+    num_workers: 4
+    max_jobs: 1000
+    max_queue_size: 1000
+    debug: false
+    supervisor:
+      max_worker_memory: 256
+      exec_ttl: 30s
+
+logs:
+  mode: production
+  level: warn

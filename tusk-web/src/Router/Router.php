@@ -3,6 +3,8 @@
 namespace Tusk\Web\Router;
 
 use ReflectionClass;
+use ReflectionAttribute;
+use Tusk\Web\Attribute\Controller;
 use Tusk\Web\Attribute\Route;
 
 class Router implements RouterInterface
@@ -18,11 +20,17 @@ class Router implements RouterInterface
     {
         foreach ($controllers as $controller) {
             $reflection = new ReflectionClass($controller);
+            $prefix = '';
+            $controllerAttributes = $reflection->getAttributes(Controller::class);
+            if ($controllerAttributes !== []) {
+                $prefix = $controllerAttributes[0]->newInstance()->prefix;
+            }
+
             foreach ($reflection->getMethods() as $method) {
-                $attributes = $method->getAttributes(Route::class);
+                $attributes = $method->getAttributes(Route::class, ReflectionAttribute::IS_INSTANCEOF);
                 foreach ($attributes as $attribute) {
                     $route = $attribute->newInstance();
-                    $this->addRoute($route->methods, $route->path, [$controller, $method->getName()], $route->middleware);
+                    $this->addRoute($route->methods, $this->joinPaths($prefix, $route->path), [$controller, $method->getName()], $route->middleware);
                 }
             }
         }
@@ -80,5 +88,13 @@ class Router implements RouterInterface
             params: $params,
             middleware: $route['middleware'] ?? [],
         );
+    }
+
+    private function joinPaths(string $prefix, string $path): string
+    {
+        $fullPath = trim($prefix, '/') . '/' . trim($path, '/');
+        $fullPath = '/' . trim($fullPath, '/');
+
+        return $fullPath === '/' || $fullPath === '/?' ? '/' : rtrim($fullPath, '/');
     }
 }

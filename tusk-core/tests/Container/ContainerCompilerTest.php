@@ -25,6 +25,32 @@ class ContainerCompilerTest extends TestCase
         $this->assertStringContainsString('namespace Tusk\TestCompiled;', $code);
         $this->assertStringContainsString('class TestCompiledContainer implements TuskContainerInterface, ContainerInterface', $code);
         $this->assertStringContainsString('private function resolve_App_Services_TestService(): object', $code);
-        $this->assertStringContainsString('\'App\Contracts\TestServiceInterface\' => $this->get(\'App\Services\TestService\')', $code);
+        self::assertStringContainsString('\'App\\\\Contracts\\\\TestServiceInterface\' => $this->get(\'App\\\\Services\\\\TestService\')', $code);
+    }
+
+    public function test_compiles_lifecycle_hooks_as_direct_calls(): void
+    {
+        $compiler = new ContainerCompiler();
+
+        $code = $compiler->compile([
+            'App\\Services\\LifecycleService' => [
+                'class' => 'App\\Services\\LifecycleService',
+                'provides' => 'App\\Services\\LifecycleService',
+                'is_factory' => false,
+                'scope' => 'worker',
+                'dependencies' => [],
+                'interfaces' => [],
+                'hooks' => [
+                    'worker.start' => ['start'],
+                    'worker.stop' => ['stop'],
+                ],
+            ],
+        ], 'Tusk\\TestCompiled', 'TestCompiledContainer');
+
+        self::assertStringContainsString('private array $workerInstances = [];', $code);
+        self::assertStringContainsString('public function runLifecycleHooks(string $event): void', $code);
+        self::assertStringContainsString('$this->resolve_App_Services_LifecycleService()->start();', $code);
+        self::assertStringContainsString('$this->resolve_App_Services_LifecycleService()->stop();', $code);
+        self::assertStringNotContainsString('new ReflectionClass', $code);
     }
 }
