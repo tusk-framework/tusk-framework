@@ -9,8 +9,15 @@ class DatabaseQueue implements QueueInterface
 {
     private string $table = 'jobs';
 
-    public function __construct(private Connection $connection)
+    public function __construct(
+        private Connection $connection,
+        private int $reservationTimeoutSeconds = 300
+    )
     {
+        if ($this->reservationTimeoutSeconds <= 0) {
+            throw new \InvalidArgumentException('Reservation timeout must be positive.');
+        }
+
         $this->ensureTableExists();
     }
 
@@ -26,21 +33,55 @@ class DatabaseQueue implements QueueInterface
     public function pop(): ?array
     {
         return $this->connection->transactional(function (Connection $conn): ?array {
-            $row = $conn->fetchAssociative(
-                "SELECT id, job_class, payload FROM {$this->table} WHERE status = 'pending' ORDER BY id ASC LIMIT 1"
-            );
+            $now = new \DateTimeImmutable('now');
+            $nowString = $now->format('Y-m-d H:i:s');
+            $staleBefore = $now->modify(sprintf('-%d seconds', $this->reservationTimeoutSeconds));
 
-            if (!$row) {
-                return null;
+            for ($attempt = 0; $attempt < 3; $attempt++) {
+                $row = $conn->fetchAssociative(
+                    "SELECT id, job_class, payload, status, reserved_at
+                     FROM {$this->table}
+                     WHERE status = 'pending'
+                        OR (status = 'processing' AND reserved_at IS NOT NULL AND reserved_at <= :stale_before)
+                     ORDER BY id ASC
+                     LIMIT 1",
+                    ['stale_before' => $staleBefore->format('Y-m-d H:i:s')]
+                );
+
+                if (!$row) {
+                    return null;
+                }
+
+                // The conditional update is the claim. A concurrent consumer can
+                // select the same candidate, but only one update can observe it
+                // as pending or stale before the other changes its status.
+                $affected = $conn->executeStatement(
+                    "UPDATE {$this->table}
+                     SET status = 'processing', reserved_at = :reserved_at
+                     WHERE id = :id
+                       AND (
+                            status = 'pending'
+                            OR (status = 'processing' AND reserved_at IS NOT NULL AND reserved_at <= :stale_before)
+                       )",
+                    [
+                        'reserved_at' => $nowString,
+                        'id' => $row['id'],
+                        'stale_before' => $staleBefore->format('Y-m-d H:i:s'),
+                    ]
+                );
+
+                if ($affected !== 1) {
+                    continue;
+                }
+
+                return [
+                    'id'        => $row['id'],
+                    'job_class' => $row['job_class'],
+                    'payload'   => json_decode((string) $row['payload'], true),
+                ];
             }
 
-            $conn->update($this->table, ['status' => 'processing', 'reserved_at' => date('Y-m-d H:i:s')], ['id' => $row['id']]);
-
-            return [
-                'id'        => $row['id'],
-                'job_class' => $row['job_class'],
-                'payload'   => json_decode((string) $row['payload'], true),
-            ];
+            return null;
         });
     }
 
