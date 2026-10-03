@@ -5,14 +5,19 @@ namespace Tusk\Runtime\Tests;
 use PHPUnit\Framework\TestCase;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Runtime\LifecycleManagerInterface;
+use Tusk\Contracts\Runtime\Modules\RuntimeModuleInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
 use Tusk\Runtime\Kernel;
+use Tusk\Runtime\Modules\RuntimeModuleRegistry;
 
 final class KernelTestContainer implements ContainerInterface
 {
+    public function instance(string $id, object $instance): void {}
+
     public function get(string $id): object
     {
-        return new class {
+        return new class
+        {
             public function handle(mixed $request): string
             {
                 return 'handled';
@@ -30,13 +35,9 @@ final class KernelTestContainer implements ContainerInterface
         throw new \LogicException('Kernel should use the lifecycle manager, not legacy hooks.');
     }
 
-    public function runLifecycleHooks(string $event): void
-    {
-    }
+    public function runLifecycleHooks(string $event): void {}
 
-    public function resetScope(string $scope): void
-    {
-    }
+    public function resetScope(string $scope): void {}
 }
 
 final class KernelTestLifecycleManager implements LifecycleManagerInterface
@@ -108,12 +109,38 @@ final class KernelTestAdapter implements RuntimeAdapterInterface
     }
 }
 
+final class KernelTestRuntimeModule implements RuntimeModuleInterface
+{
+    /** @var list<string> */
+    public array $events = [];
+
+    public function name(): string
+    {
+        return 'test';
+    }
+
+    public function register(ContainerInterface $container): void
+    {
+        $this->events[] = 'register';
+    }
+
+    public function start(): void
+    {
+        $this->events[] = 'start';
+    }
+
+    public function stop(): void
+    {
+        $this->events[] = 'stop';
+    }
+}
+
 final class KernelTest extends TestCase
 {
     public function test_kernel_owns_application_and_worker_lifecycle_around_adapter(): void
     {
-        $lifecycle = new KernelTestLifecycleManager();
-        $kernel = new Kernel(new KernelTestContainer(), new KernelTestAdapter(), $lifecycle);
+        $lifecycle = new KernelTestLifecycleManager;
+        $kernel = new Kernel(new KernelTestContainer, new KernelTestAdapter, $lifecycle);
 
         $kernel->start();
 
@@ -129,23 +156,22 @@ final class KernelTest extends TestCase
 
     public function test_kernel_stops_lifecycle_even_when_adapter_fails(): void
     {
-        $lifecycle = new KernelTestLifecycleManager();
-        $adapter = new class implements RuntimeAdapterInterface {
+        $lifecycle = new KernelTestLifecycleManager;
+        $adapter = new class implements RuntimeAdapterInterface
+        {
             public function start(ContainerInterface $container, callable $requestHandler): void
             {
                 throw new \RuntimeException('adapter failed');
             }
 
-            public function stop(): void
-            {
-            }
+            public function stop(): void {}
 
             public function getName(): string
             {
                 return 'failing';
             }
         };
-        $kernel = new Kernel(new KernelTestContainer(), $adapter, $lifecycle);
+        $kernel = new Kernel(new KernelTestContainer, $adapter, $lifecycle);
 
         $this->expectExceptionMessage('adapter failed');
         try {
@@ -158,5 +184,29 @@ final class KernelTest extends TestCase
                 'application.stop',
             ], $lifecycle->events);
         }
+    }
+
+    public function test_kernel_starts_and_stops_runtime_modules_around_the_adapter(): void
+    {
+        $lifecycle = new KernelTestLifecycleManager;
+        $module = new KernelTestRuntimeModule;
+        $kernel = new Kernel(
+            new KernelTestContainer,
+            new KernelTestAdapter,
+            $lifecycle,
+            new RuntimeModuleRegistry([$module]),
+        );
+
+        $kernel->start();
+
+        self::assertSame(['start', 'stop'], $module->events);
+        self::assertSame([
+            'application.start',
+            'worker.start',
+            'request.start',
+            'request.end',
+            'worker.stop',
+            'application.stop',
+        ], $lifecycle->events);
     }
 }

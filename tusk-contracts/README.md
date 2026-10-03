@@ -7,3 +7,16 @@ Ensures interoperability between components by defining clear, language-agnostic
 
 ## Usage
 Implement these interfaces in your own components to integrate with the Tusk ecosystem.
+
+## Runtime capabilities
+
+The runtime contracts are provider-neutral. Application code can depend on Tusk interfaces without importing RoadRunner SDK classes:
+
+- `CapabilityRegistryInterface` resolves explicitly registered capabilities;
+- `QueueInterface` and `JobTaskInterface` separate producing jobs from consuming tasks;
+- `KeyValueStoreInterface` provides worker-safe key/value operations;
+- `LockInterface` provides distributed lock ownership and `withLock` cleanup;
+- `MetricsInterface` provides labeled metrics operations;
+- `RuntimeModuleInterface` defines deterministic register/start/stop boundaries.
+
+RoadRunner adapters live in `tusk-runtime`. The contracts do not create worker pools, open RPC connections, or prescribe a plugin. A capability that was not declared or provided raises `CapabilityUnavailableException` with remediation guidance.

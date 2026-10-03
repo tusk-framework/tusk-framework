@@ -37,6 +37,34 @@ The Tusk Framework is a monorepo of specialized packages that can be used togeth
 | [**tusk/cloud**](tusk-cloud/) | Resilience (Circuit Breakers) and Discovery. |
 | [**tusk/cli**](tusk-cli/) | Scaffolding and developer tooling. |
 
+### RoadRunner capability matrix
+
+Tusk keeps application code on stable contracts while RoadRunner remains responsible for worker pools, supervision, and Goridge IPC:
+
+| Tusk module | Contract | RoadRunner plugin |
+| --- | --- | --- |
+| `capabilities.jobs` | `QueueInterface` | `jobs` |
+| `capabilities.kv` | `KeyValueStoreInterface` | `kv` |
+| `capabilities.lock` | `LockInterface` | `lock` |
+| `capabilities.metrics` | `MetricsInterface` | `metrics` |
+| `capabilities.logger` | `Psr\Log\LoggerInterface` | `logger` |
+| `grpc` | gRPC service registry | gRPC worker mode |
+
+The Go `tusk-engine` is the control plane above RoadRunner. It owns configuration validation, process lifecycle, health, logs, metrics, and graceful stop; it does not duplicate RoadRunner's pools or IPC. The PHP runtime owns application contracts, dependency injection, and lifecycle hooks.
+
+An application can select modules from its bootstrap:
+
+```php
+return [
+    'runtime' => [
+        'adapter' => 'roadrunner',
+        'modules' => ['http', 'capabilities.kv', 'capabilities.metrics'],
+    ],
+];
+```
+
+RoadRunner drivers, endpoints, pool limits, TLS, and logger output stay in `.rr.yaml`; `RR_RPC` is provided by the RoadRunner worker. The native adapter remains an explicit compatibility backend and does not emulate these capabilities.
+
 ---
 
 ## Getting Started

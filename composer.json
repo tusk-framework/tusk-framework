@@ -26,7 +26,14 @@
         "symfony/console": "^7.0",
         "psr/log": "^3.0",
         "psr/simple-cache": "^3.0",
-        "spiral/roadrunner-http": "^4.1"
+        "spiral/roadrunner-http": "^4.1",
+        "spiral/goridge": "^4.2",
+        "spiral/roadrunner-grpc": "^3.3",
+        "spiral/roadrunner-jobs": "^4.6.3",
+        "spiral/roadrunner-kv": "^4.0",
+        "spiral/roadrunner-metrics": "^3.0",
+        "roadrunner-php/app-logger": "^1.0",
+        "roadrunner-php/lock": "^1.0"
     },
     "bin": [
         "bin/tusk"

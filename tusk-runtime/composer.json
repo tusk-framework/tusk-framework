@@ -11,7 +11,14 @@
         "tusk/web": "self.version",
         "psr/log": "^3.0",
         "nyholm/psr7": "^1.8",
-        "spiral/roadrunner-http": "^4.1"
+        "spiral/roadrunner-http": "^4.1",
+        "spiral/goridge": "^4.2",
+        "spiral/roadrunner-grpc": "^3.3",
+        "spiral/roadrunner-jobs": "^4.6.3",
+        "spiral/roadrunner-kv": "^4.0",
+        "spiral/roadrunner-metrics": "^3.0",
+        "roadrunner-php/app-logger": "^1.0",
+        "roadrunner-php/lock": "^1.0"
     },
     "autoload": {
         "psr-4": {

@@ -17,16 +17,27 @@ The main entry point that:
 
 Runtime adapters own only transport and blocking concerns. RoadRunner is the primary transport; the native NDJSON loop remains a compatibility adapter. Neither adapter creates or resets container scopes.
 
-### 3. Supervisor & Worker Management
-Inspired by Erlang/Spring, Tusk manages a pool of workers:
-- **Master Process**: Remains lean, monitors child workers.
-- **Worker Processes**: Execute the application logic (Domain).
-- **Auto-Restart**: If a worker crashes, the Supervisor replaces it immediately.
+### 3. Runtime ownership
 
-### 4. Event Loop Integration
-Tusk aims to be runtime-agnostic but optimized for modern engines:
-- **Phase 1**: Support for **RoadRunner** (via RPC) and **Swoole**.
-- **Phase 2**: Native PHP fibers-based loop for isolated tasks.
+The Tusk Engine is the Go control plane. It generates and validates runtime configuration, starts and monitors RoadRunner, exposes health/log/metric control-plane behavior, and performs graceful reload/stop. RoadRunner owns worker pools, supervision, recycling, and Goridge IPC. Tusk PHP modules never create a second worker pool or proxy.
+
+The PHP runtime exposes RoadRunner functionality through provider-neutral Tusk contracts. A capability registry resolves declared services lazily and caches them for the worker lifetime. The first-party capability set is:
+
+| Tusk contract | RoadRunner plugin | Scope |
+| --- | --- | --- |
+| `QueueInterface` | `jobs` | producer; consumer boundary is separate |
+| `KeyValueStoreInterface` | `kv` | worker |
+| `LockInterface` | `lock` | process/worker instance |
+| `MetricsInterface` | `metrics` | worker |
+| `Psr\Log\LoggerInterface` | `logger` | worker |
+
+All RPC-backed capabilities share one RPC factory per worker. `RR_RPC` is supplied by RoadRunner; plugin configuration remains in `.rr.yaml`.
+
+### 4. Worker modes
+
+HTTP is the default worker mode and is exposed through the compatibility `RoadRunnerAdapter` backed by `RoadRunnerHttpModule`. gRPC has an explicit `RoadRunnerGrpcModule` service registry. Both preserve the same application/worker lifecycle; the transport does not own lifecycle state.
+
+The native NDJSON adapter is an explicit migration boundary. It remains useful for compatibility and protocol tests, but it does not implement RoadRunner capabilities.
 
 ## Application Lifecycle in Runtime
 
@@ -60,17 +71,22 @@ Each transition is idempotent where meaningful, while impossible transitions fai
 ## Configuration
 
 ```php
-#[Runtime(
-    workers: 4,
-    max_requests: 1000,
-    dispatch_mode: 'round-robin'
-)]
-class AppRuntime {}
+return [
+    'runtime' => [
+        'adapter' => 'roadrunner',
+        'modules' => ['http', 'capabilities.kv', 'capabilities.metrics'],
+    ],
+];
 ```
+
+This selects Tusk modules only. Drivers, endpoints, pools, TLS, and logger output remain in `.rr.yaml`. The `tusk-engine`/RoadRunner process is responsible for the runtime mechanics.
 
 ## Error Handling & Reliability
 - **Isolate Crashes**: A fatal error in one worker does not kill the entire application.
 - **Graceful Shutdown**: Ensures inflight requests/tasks are finished (or timed out) before exiting.
+- **Capability failures**: Missing providers or RoadRunner plugins fail with the capability name and remediation instead of silently falling back.
+
+Temporal is intentionally reserved as a future capability and worker-mode extension; it is not part of the current RoadRunner module set.
 
 ---
 *Status: Draft v0.2*

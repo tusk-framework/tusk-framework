@@ -5,6 +5,11 @@ namespace Tusk\Contracts\Container;
 interface ContainerInterface
 {
     /**
+     * Binds an existing instance to a service identifier.
+     */
+    public function instance(string $id, object $instance): void;
+
+    /**
      * Resolves a service from the container.
      */
     public function get(string $id): object;

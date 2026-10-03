@@ -6,6 +6,7 @@ use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Core\ApplicationInterface;
 use Tusk\Contracts\Runtime\LifecycleManagerInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
+use Tusk\Runtime\Modules\RuntimeModuleRegistry;
 use Tusk\Web\HttpKernel;
 
 final class Kernel implements ApplicationInterface
@@ -14,12 +15,16 @@ final class Kernel implements ApplicationInterface
 
     private readonly LifecycleManagerInterface $lifecycle;
 
+    private readonly RuntimeModuleRegistry $modules;
+
     public function __construct(
         private readonly ContainerInterface $container,
         private readonly RuntimeAdapterInterface $adapter,
         ?LifecycleManagerInterface $lifecycle = null,
+        ?RuntimeModuleRegistry $modules = null,
     ) {
         $this->lifecycle = $lifecycle ?? new LifecycleManager($container);
+        $this->modules = $modules ?? new RuntimeModuleRegistry;
     }
 
     public function start(): void
@@ -33,17 +38,22 @@ final class Kernel implements ApplicationInterface
         try {
             $this->lifecycle->applicationStart();
             $this->lifecycle->workerStart();
+            $this->modules->start();
 
             $httpKernel = $this->container->get(HttpKernel::class);
             $this->adapter->start($this->container, $this->lifecycle->wrap([$httpKernel, 'handle']));
         } finally {
             try {
-                $this->lifecycle->workerStop();
+                $this->modules->stop();
             } finally {
                 try {
-                    $this->lifecycle->applicationStop();
+                    $this->lifecycle->workerStop();
                 } finally {
-                    $this->running = false;
+                    try {
+                        $this->lifecycle->applicationStop();
+                    } finally {
+                        $this->running = false;
+                    }
                 }
             }
         }
@@ -56,10 +66,14 @@ final class Kernel implements ApplicationInterface
         }
 
         try {
-            $this->lifecycle->workerStop();
+            $this->modules->stop();
         } finally {
-            $this->lifecycle->applicationStop();
-            $this->running = false;
+            try {
+                $this->lifecycle->workerStop();
+            } finally {
+                $this->lifecycle->applicationStop();
+                $this->running = false;
+            }
         }
     }
 
