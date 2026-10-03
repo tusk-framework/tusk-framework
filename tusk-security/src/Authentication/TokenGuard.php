@@ -52,6 +52,10 @@ class TokenGuard implements GuardInterface
             return trim(substr($header, 7));
         }
 
-        return $this->allowQueryToken ? $this->request->get($this->inputKey) : null;
+        if (! $this->allowQueryToken) {
+            return null;
+        }
+
+        return $this->request->get($this->inputKey) ?? $this->request->get($this->storageKey);
     }
 }

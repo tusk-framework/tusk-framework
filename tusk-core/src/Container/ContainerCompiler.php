@@ -7,7 +7,7 @@ class ContainerCompiler
     /**
      * Compiles definitions into a PHP class string.
      *
-     * @param array<string, array> $definitions
+     * @param  array<string, array>  $definitions
      */
     public function compile(array $definitions, string $namespace = 'Tusk\\Compiled', string $className = 'CompiledContainer'): string
     {
@@ -48,7 +48,7 @@ class ContainerCompiler
         }
 
         foreach ($aliasMap as $interface => $provides) {
-            $code .= '            '.var_export($interface, true)." => \$this->get(".var_export($provides, true)."),\n";
+            $code .= '            '.var_export($interface, true).' => $this->get('.var_export($provides, true)."),\n";
         }
 
         $code .= "            default => throw new RuntimeException(\"Service not found: \$id\"),\n";
@@ -60,7 +60,7 @@ class ContainerCompiler
             $isFactory = $def['is_factory'] ?? false;
             $scope = $def['scope'] ?? 'singleton';
             $deps = $def['dependencies'] ?? [];
-            $depString = implode(', ', array_map(static fn (string $dependency): string => '\$this->get('.var_export($dependency, true).')', $deps));
+            $depString = implode(', ', array_map(fn (string $dependency): string => '$this->get('.var_export($dependency, true).')', $deps));
             $methodName = 'resolve_'.$this->sanitizeName($class);
 
             $code .= "    private function {$methodName}(): object\n    {\n";
@@ -81,8 +81,8 @@ class ContainerCompiler
                 $code .= "        \$factory = new \\$class($depString);\n";
                 $code .= "        try {\n";
                 $code .= "            \$instance = \$factory();\n";
-                $code .= "        } catch (\\Throwable \\$e) {\n";
-                $code .= "            throw new RuntimeException(\"Error in factory $class: \" . \$e->getMessage(), 0, \\$e);\n";
+                $code .= '        } catch (\\Throwable '.'$e'.") {\n";
+                $code .= sprintf('            throw new RuntimeException("Error in factory %s: " . %s->getMessage(), 0, %s);'."\n", $class, '$e', '$e');
                 $code .= "        }\n";
             } else {
                 $code .= "        \$instance = new \\$class($depString);\n";
@@ -143,7 +143,7 @@ class ContainerCompiler
     }
 
     /**
-     * @param array<string, array> $definitions
+     * @param  array<string, array>  $definitions
      * @return array<string, list<array{0: string, 1: string}>>
      */
     private function compileHookCalls(array $definitions): array

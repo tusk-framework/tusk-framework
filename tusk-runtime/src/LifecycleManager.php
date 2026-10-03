@@ -20,8 +20,7 @@ final class LifecycleManager implements LifecycleManagerInterface
     public function __construct(
         private readonly ContainerInterface $container,
         private readonly ?LoggerInterface $logger = null,
-    ) {
-    }
+    ) {}
 
     public function applicationStart(): void
     {
@@ -68,7 +67,23 @@ final class LifecycleManager implements LifecycleManagerInterface
         }
 
         $this->requestStarted = false;
-        $this->runHook(LifecycleEvent::REQUEST_END);
+        $failure = null;
+
+        try {
+            $this->runHook(LifecycleEvent::REQUEST_END);
+        } catch (Throwable $exception) {
+            $failure = $exception;
+        }
+
+        try {
+            $this->container->resetScope('request');
+        } catch (Throwable $exception) {
+            $failure ??= $exception;
+        }
+
+        if ($failure !== null) {
+            throw $failure;
+        }
     }
 
     public function workerStop(): void
@@ -82,7 +97,23 @@ final class LifecycleManager implements LifecycleManagerInterface
         }
 
         $this->workerStarted = false;
-        $this->runHook(LifecycleEvent::WORKER_STOP);
+        $failure = null;
+
+        try {
+            $this->runHook(LifecycleEvent::WORKER_STOP);
+        } catch (Throwable $exception) {
+            $failure = $exception;
+        }
+
+        try {
+            $this->container->resetScope('worker');
+        } catch (Throwable $exception) {
+            $failure ??= $exception;
+        }
+
+        if ($failure !== null) {
+            throw $failure;
+        }
     }
 
     public function applicationStop(): void

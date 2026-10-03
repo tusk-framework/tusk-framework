@@ -1,4 +1,4 @@
-# Tusk Runtime Technical Spec (v0.1)
+# Tusk Runtime Technical Spec (v0.2)
 
 ## Overview
 The **Tusk Runtime** is responsible for turning a PHP application into a persistent process. It manages the lifecycle of workers, handles signals, and integrates with the event loop.
@@ -11,13 +11,19 @@ The main entry point that:
 - Boots the configured `Runtime Adapter` (e.g., RoadRunner, Swoole, or native PHP loop).
 - Sets up signal handlers (`SIGTERM`, `SIGINT`).
 
-### 2. Supervisor & Worker Management
+### 2. Lifecycle Control Plane
+
+`Tusk\Runtime\LifecycleManager` owns application, worker, and request transitions. The Kernel starts the application and worker, wraps the transport handler, and always performs worker/application teardown when the adapter exits. Request cleanup runs exactly once in a `finally` path and preserves the handler's original exception when cleanup also fails.
+
+Runtime adapters own only transport and blocking concerns. RoadRunner is the primary transport; the native NDJSON loop remains a compatibility adapter. Neither adapter creates or resets container scopes.
+
+### 3. Supervisor & Worker Management
 Inspired by Erlang/Spring, Tusk manages a pool of workers:
 - **Master Process**: Remains lean, monitors child workers.
 - **Worker Processes**: Execute the application logic (Domain).
 - **Auto-Restart**: If a worker crashes, the Supervisor replaces it immediately.
 
-### 3. Event Loop Integration
+### 4. Event Loop Integration
 Tusk aims to be runtime-agnostic but optimized for modern engines:
 - **Phase 1**: Support for **RoadRunner** (via RPC) and **Swoole**.
 - **Phase 2**: Native PHP fibers-based loop for isolated tasks.
@@ -42,6 +48,15 @@ sequenceDiagram
     Worker->>Master: exited
 ```
 
+The transport-neutral lifecycle sequence is:
+
+```text
+application.start -> worker.start -> (request.start -> handler -> request.end)*
+worker.stop -> application.stop
+```
+
+Each transition is idempotent where meaningful, while impossible transitions fail explicitly. Teardown hooks continue in declaration order after a hook failure and report the first failure after all hooks have had an opportunity to run.
+
 ## Configuration
 
 ```php
@@ -58,4 +73,4 @@ class AppRuntime {}
 - **Graceful Shutdown**: Ensures inflight requests/tasks are finished (or timed out) before exiting.
 
 ---
-*Status: Draft v0.1*
+*Status: Draft v0.2*

@@ -16,9 +16,12 @@ final class LifecycleManagerContainer implements ContainerInterface
     /** @var array<string, Throwable> */
     public array $failures = [];
 
+    /** @var list<string> */
+    public array $resetScopes = [];
+
     public function get(string $id): object
     {
-        return new \stdClass();
+        return new \stdClass;
     }
 
     public function has(string $id): bool
@@ -26,9 +29,7 @@ final class LifecycleManagerContainer implements ContainerInterface
         return false;
     }
 
-    public function runHooks(string $attributeClass): void
-    {
-    }
+    public function runHooks(string $attributeClass): void {}
 
     public function runLifecycleHooks(string $event): void
     {
@@ -41,6 +42,7 @@ final class LifecycleManagerContainer implements ContainerInterface
 
     public function resetScope(string $scope): void
     {
+        $this->resetScopes[] = $scope;
     }
 }
 
@@ -48,7 +50,7 @@ final class LifecycleManagerTest extends TestCase
 {
     public function test_transitions_and_request_wrapper_have_stable_order(): void
     {
-        $container = new LifecycleManagerContainer();
+        $container = new LifecycleManagerContainer;
         $manager = new LifecycleManager($container);
 
         $manager->applicationStart();
@@ -68,11 +70,12 @@ final class LifecycleManagerTest extends TestCase
             'worker.stop',
             'application.stop',
         ], $container->events);
+        self::assertSame(['request', 'worker'], $container->resetScopes);
     }
 
     public function test_repeated_transitions_are_idempotent(): void
     {
-        $container = new LifecycleManagerContainer();
+        $container = new LifecycleManagerContainer;
         $manager = new LifecycleManager($container);
 
         $manager->applicationStart();
@@ -90,11 +93,12 @@ final class LifecycleManagerTest extends TestCase
             'worker.stop',
             'application.stop',
         ], $container->events);
+        self::assertSame(['worker'], $container->resetScopes);
     }
 
     public function test_impossible_transitions_raise_logic_exception(): void
     {
-        $container = new LifecycleManagerContainer();
+        $container = new LifecycleManagerContainer;
         $manager = new LifecycleManager($container);
 
         $this->expectException(LogicException::class);
@@ -103,7 +107,7 @@ final class LifecycleManagerTest extends TestCase
 
     public function test_handler_failure_preserves_original_exception_and_runs_request_end(): void
     {
-        $container = new LifecycleManagerContainer();
+        $container = new LifecycleManagerContainer;
         $manager = new LifecycleManager($container);
         $manager->applicationStart();
         $manager->workerStart();
@@ -119,24 +123,31 @@ final class LifecycleManagerTest extends TestCase
         }
 
         self::assertSame(['application.start', 'worker.start', 'request.start', 'request.end'], $container->events);
+        self::assertSame(['request'], $container->resetScopes);
     }
 
     public function test_request_cleanup_failure_is_reported_when_handler_succeeds(): void
     {
-        $container = new LifecycleManagerContainer();
+        $container = new LifecycleManagerContainer;
         $cleanupFailure = new RuntimeException('cleanup failed');
         $container->failures['request.end'] = $cleanupFailure;
         $manager = new LifecycleManager($container);
         $manager->applicationStart();
         $manager->workerStart();
 
-        $this->expectExceptionObject($cleanupFailure);
-        $manager->wrap(static fn (): string => 'ok')();
+        try {
+            $manager->wrap(static fn (): string => 'ok')();
+            self::fail('Request cleanup should throw.');
+        } catch (RuntimeException $exception) {
+            self::assertSame($cleanupFailure, $exception);
+        }
+
+        self::assertSame(['request'], $container->resetScopes);
     }
 
     public function test_stop_failure_does_not_leave_manager_in_started_state(): void
     {
-        $container = new LifecycleManagerContainer();
+        $container = new LifecycleManagerContainer;
         $container->failures['worker.stop'] = new RuntimeException('stop failed');
         $manager = new LifecycleManager($container);
         $manager->applicationStart();
@@ -156,5 +167,6 @@ final class LifecycleManagerTest extends TestCase
             'worker.stop',
             'application.stop',
         ], $container->events);
+        self::assertSame(['worker'], $container->resetScopes);
     }
 }

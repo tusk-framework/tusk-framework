@@ -22,7 +22,13 @@ To achieve near-zero performance overhead:
 ### 3. Application Lifecycle Hooks
 Services can hook into the application lifecycle:
 - `#[OnStart]`: Executed after the container is fully initialized.
-- `#[OnShutdown]`: Executed during graceful shutdown.
+- `#[OnWorkerStart]`: Executed once when a persistent worker starts.
+- `#[OnRequestStart]`: Executed before a request handler runs.
+- `#[OnRequestEnd]`: Executed after every request, including failed requests.
+- `#[OnWorkerStop]`: Executed once during worker teardown.
+- `#[OnShutdown]`: Executed during graceful application shutdown.
+
+Hooks are discovered during the build/scan phase and emitted as direct calls in a compiled container. The request and worker scopes are independent stores; resetting either scope is owned by the lifecycle manager, never by a transport adapter.
 
 ## Example Service Implementation
 
@@ -49,6 +55,7 @@ interface ContainerInterface {
     public function get(string $id): object;
     public function has(string $id): bool;
     public function runHooks(string $hookAttribute): void;
+    public function runLifecycleHooks(string $event): void;
 }
 ```
 

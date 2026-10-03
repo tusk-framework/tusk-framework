@@ -7,11 +7,12 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use ReflectionMethod;
-use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Config\Env;
-use Tusk\Web\Http\HttpException;
+use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Web\Http\ArgumentBinder;
+use Tusk\Web\Http\HttpException;
 use Tusk\Web\Http\MiddlewarePipeline;
+use Tusk\Web\Router\RouteMatch;
 use Tusk\Web\Router\RouterInterface;
 
 class HttpKernel implements RequestHandlerInterface
@@ -25,12 +26,13 @@ class HttpKernel implements RequestHandlerInterface
         private ContainerInterface $container,
         private RouterInterface $router
     ) {
-        $this->argumentBinder = new ArgumentBinder();
+        $this->argumentBinder = new ArgumentBinder;
     }
 
     public function addMiddleware(string $middlewareClass): self
     {
         $this->globalMiddleware[] = $middlewareClass;
+
         return $this;
     }
 
@@ -53,16 +55,17 @@ class HttpKernel implements RequestHandlerInterface
             }
 
             // Core handler that finally executes the Controller
-            $coreHandler = new class($this->container, $match, $this->argumentBinder) implements RequestHandlerInterface {
+            $coreHandler = new class($this->container, $match, $this->argumentBinder) implements RequestHandlerInterface
+            {
                 public function __construct(
                     private ContainerInterface $container,
-                    private ?\Tusk\Web\Router\RouteMatch $match,
+                    private ?RouteMatch $match,
                     private ArgumentBinder $argumentBinder,
                 ) {}
 
                 public function handle(ServerRequestInterface $request): ResponseInterface
                 {
-                    if (!$this->match) {
+                    if (! $this->match) {
                         return new Response(404, [], 'Not Found');
                     }
 
@@ -77,16 +80,16 @@ class HttpKernel implements RequestHandlerInterface
                         $this->container,
                     ));
 
+                    if ($response instanceof ResponseInterface) {
+                        return $response;
+                    }
+
                     if (is_array($response) || is_object($response)) {
                         return new Response(200, ['Content-Type' => 'application/json'], json_encode($response, JSON_THROW_ON_ERROR));
                     }
 
                     if (is_string($response)) {
                         return new Response(200, ['Content-Type' => 'text/html'], $response);
-                    }
-
-                    if ($response instanceof ResponseInterface) {
-                        return $response;
                     }
 
                     return new Response(500, [], 'Invalid controller response type');
@@ -101,7 +104,7 @@ class HttpKernel implements RequestHandlerInterface
             }
 
             // Pipe Route Specific Middleware
-            if ($match && !empty($match->middleware)) {
+            if ($match && ! empty($match->middleware)) {
                 foreach ($match->middleware as $middlewareClass) {
                     $pipeline->pipe($this->container->get($middlewareClass));
                 }
