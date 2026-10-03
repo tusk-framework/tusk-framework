@@ -14,7 +14,7 @@ final class RuntimeModuleRegistry
     private array $modules;
 
     /**
-     * @param iterable<RuntimeModuleInterface> $modules
+     * @param  iterable<RuntimeModuleInterface>  $modules
      */
     public function __construct(iterable $modules = [])
     {

@@ -13,7 +13,7 @@ final class RoadRunnerCapabilityProviderTest extends TestCase
 {
     public function test_it_reuses_one_rpc_for_all_capabilities_and_caches_each_adapter(): void
     {
-        $rpc = new ProviderRecordingRpc();
+        $rpc = new ProviderRecordingRpc;
         $factory = new RecordingRpcFactory($rpc);
         $provider = new RoadRunnerCapabilityProvider($factory);
 
@@ -31,7 +31,7 @@ final class RoadRunnerCapabilityProviderTest extends TestCase
 
     public function test_it_rejects_an_unknown_capability(): void
     {
-        $provider = new RoadRunnerCapabilityProvider(new RecordingRpcFactory(new ProviderRecordingRpc()));
+        $provider = new RoadRunnerCapabilityProvider(new RecordingRpcFactory(new ProviderRecordingRpc));
 
         $this->expectException(CapabilityUnavailableException::class);
         $provider->provide('unknown');
@@ -46,7 +46,7 @@ final class RecordingRpcFactory implements RoadRunnerRpcFactoryInterface
 
     public function create(): RPCInterface
     {
-        ++$this->createCalls;
+        $this->createCalls++;
 
         return $this->rpc;
     }

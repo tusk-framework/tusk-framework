@@ -5,6 +5,7 @@ namespace Tusk\Runtime\Tests\Modules;
 use PHPUnit\Framework\TestCase;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Runtime\Modules\RuntimeModuleInterface;
+use Tusk\Core\Container\Container;
 use Tusk\Runtime\Modules\RuntimeModuleRegistry;
 
 final class RuntimeModuleRegistryTest extends TestCase
@@ -18,7 +19,7 @@ final class RuntimeModuleRegistryTest extends TestCase
         ];
 
         $registry = new RuntimeModuleRegistry($modules);
-        $registry->register(new \Tusk\Core\Container\Container());
+        $registry->register(new Container);
         $registry->start();
 
         self::assertSame([

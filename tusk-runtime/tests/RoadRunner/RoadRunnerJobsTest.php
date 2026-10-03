@@ -7,6 +7,7 @@ use Spiral\RoadRunner\Jobs\JobsInterface;
 use Spiral\RoadRunner\Jobs\OptionsInterface;
 use Spiral\RoadRunner\Jobs\QueueInterface as RoadRunnerQueueInterface;
 use Spiral\RoadRunner\Jobs\Task\PreparedTaskInterface;
+use Spiral\RoadRunner\Jobs\Task\ProvidesHeadersInterface;
 use Spiral\RoadRunner\Jobs\Task\QueuedTaskInterface;
 use Tusk\Runtime\RoadRunner\RoadRunnerJobs;
 
@@ -24,7 +25,7 @@ final class RoadRunnerJobsTest extends TestCase
             'welcome',
             'payload',
             self::callback(static function (OptionsInterface $options): bool {
-                self::assertInstanceOf(\Spiral\RoadRunner\Jobs\Task\ProvidesHeadersInterface::class, $options);
+                self::assertInstanceOf(ProvidesHeadersInterface::class, $options);
 
                 return $options->getHeaders() === ['x-trace' => ['abc']];
             }),

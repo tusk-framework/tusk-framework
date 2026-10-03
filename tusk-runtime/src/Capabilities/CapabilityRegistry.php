@@ -17,7 +17,7 @@ final class CapabilityRegistry implements CapabilityRegistryInterface
     private array $resolved = [];
 
     /**
-     * @param iterable<CapabilityProviderInterface> $providers
+     * @param  iterable<CapabilityProviderInterface>  $providers
      */
     public function __construct(iterable $providers = [])
     {

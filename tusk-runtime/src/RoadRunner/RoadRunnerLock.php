@@ -18,7 +18,7 @@ final class RoadRunnerLock implements LockInterface
 
     public function __construct(
         private readonly RoadRunnerLockInterface $lock,
-        private readonly LoggerInterface $logger = new NullLogger(),
+        private readonly LoggerInterface $logger = new NullLogger,
     ) {}
 
     public function acquire(string $name, ?int $ttlSeconds = null): bool

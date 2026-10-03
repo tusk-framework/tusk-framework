@@ -15,7 +15,7 @@ final class RoadRunnerLockTest extends TestCase
         $lock->expects(self::once())->method('lock')->with('resource', null, 30, 0)->willReturn('lock-id');
         $lock->expects(self::once())->method('release')->with('resource', 'lock-id')->willReturn(true);
 
-        $result = (new RoadRunnerLock($lock, new NullLogger()))->withLock('resource', static fn (): string => 'done', 30);
+        $result = (new RoadRunnerLock($lock, new NullLogger))->withLock('resource', static fn (): string => 'done', 30);
 
         self::assertSame('done', $result);
     }
@@ -28,7 +28,7 @@ final class RoadRunnerLockTest extends TestCase
 
         $this->expectExceptionMessage('callback failure');
 
-        (new RoadRunnerLock($lock, new NullLogger()))->withLock(
+        (new RoadRunnerLock($lock, new NullLogger))->withLock(
             'resource',
             static function (): never {
                 throw new \RuntimeException('callback failure');

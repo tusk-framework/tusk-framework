@@ -12,17 +12,15 @@ interface TestGrpcServiceInterface extends ServiceInterface
     public const NAME = 'test.Service';
 }
 
-final class TestGrpcService implements TestGrpcServiceInterface
-{
-}
+final class TestGrpcService implements TestGrpcServiceInterface {}
 
 final class RoadRunnerGrpcModuleTest extends TestCase
 {
     public function test_it_keeps_a_unique_tusk_service_registry_and_does_not_expose_the_server(): void
     {
-        $module = new RoadRunnerGrpcModule();
-        $service = new TestGrpcService();
-        $container = new Container();
+        $module = new RoadRunnerGrpcModule;
+        $service = new TestGrpcService;
+        $container = new Container;
 
         $module->registerService(TestGrpcServiceInterface::class, $service);
         $module->registerService(TestGrpcServiceInterface::class, $service);

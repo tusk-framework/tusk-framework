@@ -11,7 +11,7 @@ final class CapabilityRegistryTest extends TestCase
 {
     public function test_it_resolves_and_caches_a_capability_from_a_provider(): void
     {
-        $provider = new RecordingCapabilityProvider();
+        $provider = new RecordingCapabilityProvider;
         $registry = new CapabilityRegistry([$provider]);
 
         self::assertTrue($registry->has('example'));
@@ -39,7 +39,7 @@ final class RecordingCapabilityProvider implements CapabilityProviderInterface
 
     public function __construct()
     {
-        $this->capability = new \stdClass();
+        $this->capability = new \stdClass;
     }
 
     public function supports(string $name): bool
@@ -49,7 +49,7 @@ final class RecordingCapabilityProvider implements CapabilityProviderInterface
 
     public function provide(string $name): object
     {
-        ++$this->provideCalls;
+        $this->provideCalls++;
 
         return $this->capability;
     }

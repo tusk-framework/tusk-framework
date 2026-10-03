@@ -3,8 +3,8 @@
 namespace Tusk\Runtime\Tests\RoadRunner;
 
 use PHPUnit\Framework\TestCase;
-use Tusk\Core\Container\Container;
 use Tusk\Contracts\Runtime\Capabilities\JobTaskInterface;
+use Tusk\Core\Container\Container;
 use Tusk\Runtime\RoadRunner\RoadRunnerJobsModule;
 
 final class RoadRunnerJobsModuleTest extends TestCase
@@ -13,7 +13,7 @@ final class RoadRunnerJobsModuleTest extends TestCase
     {
         $task = $this->createMock(JobTaskInterface::class);
         $module = new RoadRunnerJobsModule(static fn (JobTaskInterface $received): string => 'handled');
-        $container = new Container();
+        $container = new Container;
 
         $module->register($container);
         $module->start();

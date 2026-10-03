@@ -13,7 +13,7 @@ final class RoadRunnerLoggerTest extends TestCase
 {
     public function test_it_sorts_context_keys_before_forwarding_structured_logs(): void
     {
-        $rpc = new LoggerRecordingRpc();
+        $rpc = new LoggerRecordingRpc;
         $logger = new RoadRunnerLogger(new Logger($rpc));
 
         $logger->info('user loaded', ['z' => 'last', 'a' => 'first']);

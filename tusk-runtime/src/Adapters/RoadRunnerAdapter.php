@@ -8,7 +8,7 @@ use Tusk\Runtime\Modules\RoadRunnerHttpModule;
 
 class RoadRunnerAdapter implements RuntimeAdapterInterface
 {
-    public function __construct(private readonly RoadRunnerHttpModule $http = new RoadRunnerHttpModule()) {}
+    public function __construct(private readonly RoadRunnerHttpModule $http = new RoadRunnerHttpModule) {}
 
     public function start(ContainerInterface $container, callable $requestHandler): void
     {

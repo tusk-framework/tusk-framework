@@ -33,7 +33,7 @@ final class IdeMetadataController
 PHP);
 
         try {
-            $routes = (new RouteCompiler())->scan([$directory]);
+            $routes = (new RouteCompiler)->scan([$directory]);
 
             self::assertSame([], $routes['GET']);
         } finally {

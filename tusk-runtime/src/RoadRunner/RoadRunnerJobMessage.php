@@ -12,7 +12,7 @@ use Tusk\Contracts\Runtime\Capabilities\QueueMessageInterface;
 final class RoadRunnerJobMessage implements QueueMessageInterface
 {
     /**
-     * @param array<string, string> $taskHeaders
+     * @param  array<string, string>  $taskHeaders
      */
     public function __construct(
         private readonly string $taskId,

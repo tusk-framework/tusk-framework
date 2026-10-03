@@ -15,7 +15,7 @@ final class RoadRunnerRpcFactory implements RoadRunnerRpcFactoryInterface
     private ?RPCInterface $rpc = null;
 
     /**
-     * @param Closure(non-empty-string): RPCInterface|null $creator
+     * @param  Closure(non-empty-string): RPCInterface|null  $creator
      */
     public function __construct(
         private readonly ?EnvironmentInterface $environment = null,

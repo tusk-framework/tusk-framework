@@ -36,11 +36,11 @@ final class RoadRunnerJobs implements TuskQueueInterface
     }
 
     /**
-     * @param array<string, string> $headers
+     * @param  array<string, string>  $headers
      */
     private function options(array $headers): Options
     {
-        $options = new Options();
+        $options = new Options;
 
         foreach ($headers as $name => $value) {
             $options = $options->withHeader($name, $value);

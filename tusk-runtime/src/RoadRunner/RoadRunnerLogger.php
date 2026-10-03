@@ -66,7 +66,7 @@ final class RoadRunnerLogger implements LoggerInterface
     }
 
     /**
-     * @param array<mixed> $context
+     * @param  array<mixed>  $context
      * @return array<mixed>
      */
     private function normalizeContext(array $context): array

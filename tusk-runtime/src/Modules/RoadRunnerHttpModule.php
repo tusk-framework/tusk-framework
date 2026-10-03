@@ -18,7 +18,7 @@ final class RoadRunnerHttpModule implements RuntimeAdapterInterface
     private ?Worker $worker = null;
 
     /**
-     * @param Closure(): Worker|null $workerFactory
+     * @param  Closure(): Worker|null  $workerFactory
      */
     public function __construct(private readonly ?Closure $workerFactory = null) {}
 
@@ -33,7 +33,7 @@ final class RoadRunnerHttpModule implements RuntimeAdapterInterface
         try {
             $workerFactory = $this->workerFactory ?? static fn (): Worker => Worker::create();
             $this->worker = $workerFactory();
-            $psr17Factory = new Psr17Factory();
+            $psr17Factory = new Psr17Factory;
             $psr7 = new PSR7Worker($this->worker, $psr17Factory, $psr17Factory, $psr17Factory);
 
             while ($this->running) {

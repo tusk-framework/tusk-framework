@@ -10,9 +10,7 @@ use Tusk\Runtime\LifecycleManager;
 
 final class LifecycleManagerContainer implements ContainerInterface
 {
-    public function instance(string $id, object $instance): void
-    {
-    }
+    public function instance(string $id, object $instance): void {}
 
     /** @var list<string> */
     public array $events = [];

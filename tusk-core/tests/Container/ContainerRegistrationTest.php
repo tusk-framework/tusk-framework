@@ -16,8 +16,8 @@ final class ContainerRegistrationTest extends TestCase
     {
         self::assertTrue(method_exists(ContainerInterface::class, 'instance'));
 
-        $container = new Container();
-        $capability = new TestCapability();
+        $container = new Container;
+        $capability = new TestCapability;
 
         $this->bindCapability($container, $capability);
 

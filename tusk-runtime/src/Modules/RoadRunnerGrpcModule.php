@@ -24,7 +24,7 @@ final class RoadRunnerGrpcModule implements RuntimeModuleInterface
     }
 
     /**
-     * @param class-string<ServiceInterface> $interface
+     * @param  class-string<ServiceInterface>  $interface
      */
     public function registerService(string $interface, ServiceInterface $service): void
     {
@@ -47,7 +47,7 @@ final class RoadRunnerGrpcModule implements RuntimeModuleInterface
             return;
         }
 
-        $this->server = new Server();
+        $this->server = new Server;
 
         foreach ($this->services as $interface => $service) {
             $this->server->registerService($interface, $service);

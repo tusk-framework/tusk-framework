@@ -6,8 +6,8 @@ use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Core\ApplicationInterface;
 use Tusk\Contracts\Runtime\LifecycleManagerInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
-use Tusk\Web\HttpKernel;
 use Tusk\Runtime\Modules\RuntimeModuleRegistry;
+use Tusk\Web\HttpKernel;
 
 final class Kernel implements ApplicationInterface
 {
@@ -24,7 +24,7 @@ final class Kernel implements ApplicationInterface
         ?RuntimeModuleRegistry $modules = null,
     ) {
         $this->lifecycle = $lifecycle ?? new LifecycleManager($container);
-        $this->modules = $modules ?? new RuntimeModuleRegistry();
+        $this->modules = $modules ?? new RuntimeModuleRegistry;
     }
 
     public function start(): void

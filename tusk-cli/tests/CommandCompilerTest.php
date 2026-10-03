@@ -25,7 +25,7 @@ final class IdeMetadataCommand {}
 PHP);
 
         try {
-            self::assertSame([], (new CommandCompiler())->scan([$directory]));
+            self::assertSame([], (new CommandCompiler)->scan([$directory]));
         } finally {
             unlink($metadata);
             rmdir($directory);

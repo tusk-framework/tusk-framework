@@ -25,7 +25,7 @@ final class IdeMetadataService {}
 PHP);
 
         try {
-            self::assertSame([], (new ServiceScanner())->scan([$directory]));
+            self::assertSame([], (new ServiceScanner)->scan([$directory]));
         } finally {
             unlink($metadata);
             rmdir($directory);

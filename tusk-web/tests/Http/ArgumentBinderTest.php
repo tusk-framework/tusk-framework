@@ -16,11 +16,11 @@ final class ArgumentBinderTest extends TestCase
         $request = (new ServerRequest('POST', '/users/42'))
             ->withParsedBody(['name' => 'Ana']);
 
-        $arguments = (new ArgumentBinder())->bind(
+        $arguments = (new ArgumentBinder)->bind(
             new ReflectionMethod(BindableController::class, 'create'),
             $request,
             ['id' => '42'],
-            new EmptyContainer(),
+            new EmptyContainer,
         );
 
         $this->assertSame(42, $arguments[0]);
@@ -46,9 +46,20 @@ final readonly class CreateUserRequest
 final class EmptyContainer implements ContainerInterface
 {
     public function instance(string $id, object $instance): void {}
-    public function get(string $id): object { throw new \RuntimeException("Missing {$id}"); }
-    public function has(string $id): bool { return false; }
+
+    public function get(string $id): object
+    {
+        throw new \RuntimeException("Missing {$id}");
+    }
+
+    public function has(string $id): bool
+    {
+        return false;
+    }
+
     public function runHooks(string $attributeClass): void {}
+
     public function runLifecycleHooks(string $event): void {}
+
     public function resetScope(string $scope): void {}
 }
