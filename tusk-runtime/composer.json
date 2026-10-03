@@ -7,6 +7,8 @@
         "php": "^8.2",
         "tusk/contracts": "self.version",
         "tusk/core": "self.version",
+        "tusk/config": "self.version",
+        "tusk/web": "self.version",
         "nyholm/psr7": "^1.8",
         "spiral/roadrunner-http": "^4.1"
     },
