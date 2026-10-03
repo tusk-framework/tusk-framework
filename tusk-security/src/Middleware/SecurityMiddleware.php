@@ -12,6 +12,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Tusk\Contracts\Attributes\Service;
+use Tusk\Web\Http\HttpException;
 
 #[Service]
 class SecurityMiddleware implements MiddlewareInterface
@@ -53,13 +54,13 @@ class SecurityMiddleware implements MiddlewareInterface
 
             if ($inst instanceof Authenticated) {
                 if (! $this->guard->check()) {
-                    throw new \RuntimeException('Unauthenticated', 401);
+                    throw new HttpException(401, 'Unauthenticated');
                 }
             }
 
             if ($inst instanceof Can) {
                 if (! $this->gate->allows($inst->ability, $inst->subject)) {
-                    throw new \RuntimeException('Unauthorized', 403);
+                    throw new HttpException(403, 'Unauthorized');
                 }
             }
         }

@@ -7,6 +7,8 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Tusk\Contracts\Container\ContainerInterface;
+use Tusk\Config\Env;
+use Tusk\Web\Http\HttpException;
 use Tusk\Web\Http\MiddlewarePipeline;
 use Tusk\Web\Router\RouterInterface;
 
@@ -38,6 +40,11 @@ class HttpKernel implements RequestHandlerInterface
             $uri = $request->getUri()->getPath();
 
             $match = $this->router->match($method, $uri);
+            if ($match) {
+                $request = $request
+                    ->withAttribute('_controller', $match->controller)
+                    ->withAttribute('_action', $match->method);
+            }
 
             // Core handler that finally executes the Controller
             $coreHandler = new class($this->container, $match) implements RequestHandlerInterface {
@@ -91,116 +98,57 @@ class HttpKernel implements RequestHandlerInterface
 
             return $pipeline->handle($request);
         } catch (\Throwable $e) {
-            // Server Log
-            error_log(sprintf("[%s] %s in %s:%d\nStack trace:\n%s", get_class($e), $e->getMessage(), $e->getFile(), $e->getLine(), $e->getTraceAsString()));
+            $requestId = bin2hex(random_bytes(8));
+            error_log(sprintf('[request:%s] %s: %s in %s:%d', $requestId, get_class($e), $e->getMessage(), $e->getFile(), $e->getLine()));
 
-            // If it is a request asking for JSON, return JSON
-            if (str_contains($request->getHeaderLine('Accept'), 'application/json')) {
-                return new Response(500, ['Content-Type' => 'application/json'], json_encode([
-                    'error' => 'Internal Server Error',
-                    'message' => $e->getMessage(),
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine(),
-                ]));
+            $status = $e instanceof HttpException ? $e->getStatusCode() : 500;
+            $debug = self::isDebugEnabled();
+            $headers = ['X-Request-Id' => $requestId];
+
+            if (str_contains(strtolower($request->getHeaderLine('Accept')), 'application/json')) {
+                $payload = [
+                    'error' => $e instanceof HttpException ? $e->getMessage() : 'Internal Server Error',
+                    'request_id' => $requestId,
+                ];
+                if ($debug) {
+                    $payload['exception'] = get_class($e);
+                    $payload['message'] = $e->getMessage();
+                    $payload['file'] = $e->getFile();
+                    $payload['line'] = $e->getLine();
+                }
+
+                return new Response($status, $headers + ['Content-Type' => 'application/json'], json_encode($payload, JSON_THROW_ON_ERROR));
             }
 
-            // User-friendly HTML Output
-            $debug = defined('WP_DEBUG') ? WP_DEBUG : false;
-            $traceHtml = '';
-            $consoleJs = '';
-
+            $title = $status === 500 ? 'Internal Server Error' : $e->getMessage();
+            $details = '';
             if ($debug) {
-                $traceHtml = "
-                    <div class='debug-info'>
-                        <h3>Error Details (Debug Mode):</h3>
-                        <p><strong>Exception:</strong> " . get_class($e) . "</p>
-                        <p><strong>Message:</strong> " . htmlspecialchars($e->getMessage()) . "</p>
-                        <p><strong>File:</strong> " . $e->getFile() . " on line " . $e->getLine() . "</p>
-                        <details>
-                            <summary>Stack Trace</summary>
-                            <pre>" . htmlspecialchars($e->getTraceAsString()) . "</pre>
-                        </details>
-                    </div>
-                ";
-
-                $jsonError = json_encode([
-                    'type' => get_class($e),
-                    'message' => $e->getMessage(),
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine()
-                ]);
-                
-                $consoleJs = "<script>console.error('Tusk Engine Error:', {$jsonError});</script>";
+                $details = sprintf(
+                    '<div class="debug-info"><h2>%s</h2><p>%s</p><p>%s:%d</p><pre>%s</pre></div>',
+                    htmlspecialchars(get_class($e), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                    htmlspecialchars($e->getMessage(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                    htmlspecialchars($e->getFile(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                    $e->getLine(),
+                    htmlspecialchars($e->getTraceAsString(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+                );
             }
 
-            $html = <<<HTML
-            <!DOCTYPE html>
-            <html lang="en-US">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <title>500 - Internal Server Error</title>
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                        background: #f8f9fa;
-                        color: #202124;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        min-height: 100vh;
-                        margin: 0;
-                        padding: 20px;
-                    }
-                    .error-container {
-                        background: #fff;
-                        border-radius: 12px;
-                        box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-                        max-width: 800px;
-                        width: 100%;
-                        padding: 40px;
-                    }
-                    h1 { color: #dc3545; font-size: 32px; margin-top: 0; }
-                    p { font-size: 16px; line-height: 1.6; color: #5f6368; }
-                    .debug-info {
-                        margin-top: 30px;
-                        padding: 20px;
-                        background: #f1f3f4;
-                        border-radius: 8px;
-                        border-left: 4px solid #dc3545;
-                        overflow-x: auto;
-                    }
-                    .debug-info h3 { margin-top: 0; font-size: 18px; color: #202124; }
-                    .debug-info p { margin: 8px 0; font-size: 14px; color: #3c4043; }
-                    pre {
-                        background: #202124;
-                        color: #e8eaed;
-                        padding: 16px;
-                        border-radius: 6px;
-                        font-size: 13px;
-                        overflow-x: auto;
-                    }
-                    summary {
-                        cursor: pointer;
-                        font-weight: 600;
-                        color: #1a73e8;
-                        margin-top: 16px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="error-container">
-                    <h1>Oops! Something went wrong.</h1>
-                    <p>The server encountered an unexpected condition that prevented it from fulfilling the request.</p>
-                    <p>The technical team has already been notified via system logs.</p>
-                    {$traceHtml}
-                </div>
-                {$consoleJs}
-            </body>
-            </html>
-            HTML;
+            $html = sprintf(
+                '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>%d - %s</title></head><body><main><h1>%d - %s</h1><p>Request ID: %s</p>%s</main></body></html>',
+                $status,
+                htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                $status,
+                htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                htmlspecialchars($requestId, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                $details
+            );
 
-            return new Response(500, ['Content-Type' => 'text/html; charset=utf-8'], $html);
+            return new Response($status, $headers + ['Content-Type' => 'text/html; charset=utf-8'], $html);
         }
+    }
+
+    private static function isDebugEnabled(): bool
+    {
+        return in_array(strtolower(trim((string) Env::get('APP_DEBUG', 'false'))), ['1', 'true', 'yes', 'on'], true);
     }
 }
