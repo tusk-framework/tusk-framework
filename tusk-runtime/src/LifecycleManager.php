@@ -8,6 +8,7 @@ use Throwable;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Runtime\LifecycleEvent;
 use Tusk\Contracts\Runtime\LifecycleManagerInterface;
+use Tusk\Runtime\Observability\LifecycleObserverInterface;
 
 final class LifecycleManager implements LifecycleManagerInterface
 {
@@ -20,6 +21,7 @@ final class LifecycleManager implements LifecycleManagerInterface
     public function __construct(
         private readonly ContainerInterface $container,
         private readonly ?LoggerInterface $logger = null,
+        private readonly ?LifecycleObserverInterface $observer = null,
     ) {}
 
     public function applicationStart(): void
@@ -30,6 +32,7 @@ final class LifecycleManager implements LifecycleManagerInterface
 
         $this->runHook(LifecycleEvent::APPLICATION_START);
         $this->applicationStarted = true;
+        $this->notifyObserver(fn () => $this->observer?->applicationStarted());
     }
 
     public function workerStart(): void
@@ -44,6 +47,7 @@ final class LifecycleManager implements LifecycleManagerInterface
 
         $this->runHook(LifecycleEvent::WORKER_START);
         $this->workerStarted = true;
+        $this->notifyObserver(fn () => $this->observer?->workerStarted());
     }
 
     public function requestStart(): void
@@ -58,9 +62,15 @@ final class LifecycleManager implements LifecycleManagerInterface
 
         $this->runHook(LifecycleEvent::REQUEST_START);
         $this->requestStarted = true;
+        $this->notifyObserver(fn () => $this->observer?->requestStarted());
     }
 
     public function requestEnd(): void
+    {
+        $this->finishRequest(null, null);
+    }
+
+    private function finishRequest(mixed $response, ?Throwable $handlerException): void
     {
         if (! $this->requestStarted) {
             return;
@@ -80,6 +90,8 @@ final class LifecycleManager implements LifecycleManagerInterface
         } catch (Throwable $exception) {
             $failure ??= $exception;
         }
+
+        $this->notifyObserver(fn () => $this->observer?->requestFinished($response, $handlerException));
 
         if ($failure !== null) {
             throw $failure;
@@ -111,6 +123,8 @@ final class LifecycleManager implements LifecycleManagerInterface
             $failure ??= $exception;
         }
 
+        $this->notifyObserver(fn () => $this->observer?->workerStopped());
+
         if ($failure !== null) {
             throw $failure;
         }
@@ -128,6 +142,7 @@ final class LifecycleManager implements LifecycleManagerInterface
 
         $this->applicationStarted = false;
         $this->runHook(LifecycleEvent::APPLICATION_STOP);
+        $this->notifyObserver(fn () => $this->observer?->applicationStopped());
     }
 
     public function wrap(callable $handler): callable
@@ -135,15 +150,18 @@ final class LifecycleManager implements LifecycleManagerInterface
         return function (...$arguments) use ($handler): mixed {
             $this->requestStart();
             $handlerException = null;
+            $response = null;
 
             try {
-                return $handler(...$arguments);
+                $response = $handler(...$arguments);
+
+                return $response;
             } catch (Throwable $exception) {
                 $handlerException = $exception;
                 throw $exception;
             } finally {
                 try {
-                    $this->requestEnd();
+                    $this->finishRequest($response, $handlerException);
                 } catch (Throwable $cleanupException) {
                     if ($handlerException === null) {
                         throw $cleanupException;
@@ -156,6 +174,19 @@ final class LifecycleManager implements LifecycleManagerInterface
                 }
             }
         };
+    }
+
+    private function notifyObserver(callable $callback): void
+    {
+        if ($this->observer === null) {
+            return;
+        }
+
+        try {
+            $callback();
+        } catch (Throwable $exception) {
+            $this->logger?->error('Runtime observability callback failed.', ['exception' => $exception]);
+        }
     }
 
     private function runHook(LifecycleEvent $event): void

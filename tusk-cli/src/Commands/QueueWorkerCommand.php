@@ -10,6 +10,7 @@ use Tusk\Cli\Attribute\AsCommand;
 use Tusk\Contracts\Attributes\Service;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Events\Queue\QueueInterface;
+use Tusk\Runtime\Observability\RuntimeObservability;
 
 #[Service]
 #[AsCommand('queue:work', 'Start the queue worker')]
@@ -17,7 +18,8 @@ class QueueWorkerCommand extends Command
 {
     public function __construct(
         private ContainerInterface $container,
-        private ?LoggerInterface $logger = null
+        private ?LoggerInterface $logger = null,
+        private ?RuntimeObservability $observability = null,
     ) {
         parent::__construct();
     }
@@ -43,6 +45,10 @@ class QueueWorkerCommand extends Command
                 $output->writeln("Processing Job: {$jobClass} (ID: {$job['id']})");
                 $this->logger?->info("Processing Job: {$jobClass}", ['id' => $job['id']]);
 
+                $jobException = null;
+                $jobSucceeded = false;
+                $this->observability?->jobStarted($jobClass, (string) $job['id']);
+
                 try {
                     $jobInstance = $this->container->has($jobClass)
                         ? $this->container->get($jobClass)
@@ -53,13 +59,17 @@ class QueueWorkerCommand extends Command
                     }
 
                     $queue->complete($job['id']);
+                    $jobSucceeded = true;
                     $output->writeln("<info>Completed Job: {$jobClass} (ID: {$job['id']})</info>");
                     $this->logger?->info("Completed Job: {$jobClass}", ['id' => $job['id']]);
 
                 } catch (\Throwable $e) {
+                    $jobException = $e;
                     $output->writeln("<error>Failed Job: {$jobClass} (ID: {$job['id']}) - {$e->getMessage()}</error>");
                     $this->logger?->error("Failed Job: {$jobClass}", ['id' => $job['id'], 'error' => $e]);
                     $queue->fail($job['id'], $e);
+                } finally {
+                    $this->observability?->jobFinished($jobSucceeded, $jobException);
                 }
             } else {
                 usleep(500_000); // 0.5s before next poll

@@ -10,6 +10,7 @@ use Tusk\Contracts\Observability\WorkerDiagnosticsInterface;
 use Tusk\Contracts\Runtime\Modules\RuntimeModuleInterface;
 use Tusk\Runtime\Observability\ObservabilityConfiguration;
 use Tusk\Runtime\Observability\ObservabilityProviderFactory;
+use Tusk\Runtime\Observability\RuntimeObservability;
 use Tusk\Runtime\Observability\WorkerDiagnosticsCollector;
 
 final class RuntimeObservabilityModule implements RuntimeModuleInterface
@@ -32,6 +33,7 @@ final class RuntimeObservabilityModule implements RuntimeModuleInterface
         $container->instance(TelemetryProviderInterface::class, $provider);
         $container->instance(WorkerDiagnosticsInterface::class, $collector);
         $container->instance(WorkerDiagnosticsCollector::class, $collector);
+        $container->instance(RuntimeObservability::class, new RuntimeObservability($provider, $collector));
     }
 
     public function start(): void {}
