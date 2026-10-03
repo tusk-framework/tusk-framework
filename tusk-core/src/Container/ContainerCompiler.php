@@ -112,11 +112,17 @@ class ContainerCompiler
         $code .= "    }\n\n";
 
         $code .= "    public function runLifecycleHooks(string \$event): void\n    {\n";
+        $code .= "        \$firstFailure = null;\n";
         foreach ($this->compileHookCalls($definitions) as $event => $calls) {
             $code .= '        if ($event === '.var_export($event, true).") {\n";
             foreach ($calls as [$class, $method]) {
-                $code .= "            \$this->resolve_{$this->sanitizeName($class)}()->".$this->escapeMethod($method)."();\n";
+                $code .= "            try {\n";
+                $code .= "                \$this->resolve_{$this->sanitizeName($class)}()->".$this->escapeMethod($method)."();\n";
+                $code .= "            } catch (\\Throwable \$exception) {\n";
+                $code .= "                \$firstFailure ??= \$exception;\n";
+                $code .= "            }\n";
             }
+            $code .= "            if (\$firstFailure !== null) {\n                throw \$firstFailure;\n            }\n";
             $code .= "            return;\n        }\n";
         }
         $code .= "    }\n\n";

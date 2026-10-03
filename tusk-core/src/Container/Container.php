@@ -203,10 +203,20 @@ class Container implements ContainerInterface
 
     public function runLifecycleHooks(string $event): void
     {
+        $firstFailure = null;
+
         foreach ($this->hooks as $serviceClass => $events) {
             foreach ($events[$event] ?? [] as $methodName) {
-                $this->get($serviceClass)->{$methodName}();
+                try {
+                    $this->get($serviceClass)->{$methodName}();
+                } catch (\Throwable $exception) {
+                    $firstFailure ??= $exception;
+                }
             }
+        }
+
+        if ($firstFailure !== null) {
+            throw $firstFailure;
         }
     }
 

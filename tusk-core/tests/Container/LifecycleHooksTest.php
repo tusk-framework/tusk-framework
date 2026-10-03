@@ -41,6 +41,26 @@ final class LifecycleHookService
     }
 }
 
+#[Service(scope: 'worker')]
+final class FailingTeardownService
+{
+    /** @var list<string> */
+    public array $events = [];
+
+    #[OnWorkerStop]
+    public function first(): void
+    {
+        $this->events[] = 'first';
+        throw new \RuntimeException('first teardown failed');
+    }
+
+    #[OnWorkerStop]
+    public function second(): void
+    {
+        $this->events[] = 'second';
+    }
+}
+
 final class LifecycleHooksTest extends TestCase
 {
     public function test_interpreted_container_resolves_hooks_lazily_and_invokes_them(): void
@@ -73,5 +93,20 @@ final class LifecycleHooksTest extends TestCase
         $container->resetScope('worker');
 
         self::assertNotSame($first, $container->get(LifecycleHookService::class));
+    }
+
+    public function test_teardown_continues_after_a_hook_failure(): void
+    {
+        $container = new Container();
+        $container->register(FailingTeardownService::class);
+
+        try {
+            $container->runLifecycleHooks('worker.stop');
+            self::fail('The first teardown failure should be reported.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('first teardown failed', $exception->getMessage());
+        }
+
+        self::assertSame(['first', 'second'], $container->get(FailingTeardownService::class)->events);
     }
 }
