@@ -6,6 +6,7 @@ use Nyholm\Psr7\Response;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use ReflectionMethod;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Config\Env;
 use Tusk\Web\Http\HttpException;
@@ -17,10 +18,14 @@ class HttpKernel implements RequestHandlerInterface
     /** @var string[] */
     private array $globalMiddleware = [];
 
+    private ArgumentBinder $argumentBinder;
+
     public function __construct(
         private ContainerInterface $container,
         private RouterInterface $router
-    ) {}
+    ) {
+        $this->argumentBinder = new ArgumentBinder();
+    }
 
     public function addMiddleware(string $middlewareClass): self
     {
@@ -63,11 +68,15 @@ class HttpKernel implements RequestHandlerInterface
                     $method = $this->match->method;
 
                     $controller = $this->container->get($controllerClass);
-                    $tuskRequest = new \Tusk\Web\Http\Request($request);
-                    $response = $controller->$method(...[...array_values($this->match->params), $tuskRequest]);
+                    $response = $controller->$method(...$this->argumentBinder->bind(
+                        new ReflectionMethod($controller, $method),
+                        $request,
+                        $this->match->params,
+                        $this->container,
+                    ));
 
-                    if (is_array($response)) {
-                        return new Response(200, ['Content-Type' => 'application/json'], (string) json_encode($response));
+                    if (is_array($response) || is_object($response)) {
+                        return new Response(200, ['Content-Type' => 'application/json'], json_encode($response, JSON_THROW_ON_ERROR));
                     }
 
                     if (is_string($response)) {
@@ -107,7 +116,10 @@ class HttpKernel implements RequestHandlerInterface
 
             if (str_contains(strtolower($request->getHeaderLine('Accept')), 'application/json')) {
                 $payload = [
-                    'error' => $e instanceof HttpException ? $e->getMessage() : 'Internal Server Error',
+                    'type' => 'about:blank',
+                    'title' => $e instanceof HttpException ? $e->getMessage() : 'Internal Server Error',
+                    'status' => $status,
+                    'instance' => (string) $request->getUri()->getPath(),
                     'request_id' => $requestId,
                 ];
                 if ($debug) {
@@ -117,7 +129,7 @@ class HttpKernel implements RequestHandlerInterface
                     $payload['line'] = $e->getLine();
                 }
 
-                return new Response($status, $headers + ['Content-Type' => 'application/json'], json_encode($payload, JSON_THROW_ON_ERROR));
+                return new Response($status, $headers + ['Content-Type' => 'application/problem+json'], json_encode($payload, JSON_THROW_ON_ERROR));
             }
 
             $title = $status === 500 ? 'Internal Server Error' : $e->getMessage();

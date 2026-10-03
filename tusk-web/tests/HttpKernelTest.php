@@ -55,6 +55,19 @@ class HttpKernelTest extends TestCase
         $this->assertStringNotContainsString('sensitive exception', $body);
         $this->assertStringNotContainsString(__FILE__, $body);
         $this->assertNotSame('', $response->getHeaderLine('X-Request-Id'));
+        $this->assertSame('application/problem+json', $response->getHeaderLine('Content-Type'));
+    }
+
+    public function test_typed_object_controller_results_are_serialized_as_json(): void
+    {
+        $container = new TestContainer([TypedController::class => new TypedController()]);
+        $kernel = new HttpKernel($container, new TestRouter(TypedController::class, 'show'));
+
+        $response = $kernel->handle(new \Nyholm\Psr7\ServerRequest('GET', '/hello'));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('application/json', $response->getHeaderLine('Content-Type'));
+        $this->assertSame('{"id":7,"name":"Ada"}', (string) $response->getBody());
     }
 }
 
@@ -74,11 +87,14 @@ final class TestContainer implements ContainerInterface
 
 final class TestRouter implements RouterInterface
 {
-    public function __construct(private string $controller = TestController::class) {}
+    public function __construct(
+        private string $controller = TestController::class,
+        private string $method = 'handle',
+    ) {}
 
     public function match(string $method, string $uri): ?RouteMatch
     {
-        return $uri === '/hello' ? new RouteMatch($this->controller, 'handle') : null;
+        return $uri === '/hello' ? new RouteMatch($this->controller, $this->method) : null;
     }
 }
 
@@ -90,6 +106,14 @@ final class TestController
 final class ThrowingController
 {
     public function handle(Request $request): string { throw new \RuntimeException('sensitive exception'); }
+}
+
+final class TypedController
+{
+    public function show(): object
+    {
+        return (object) ['id' => 7, 'name' => 'Ada'];
+    }
 }
 
 final class RecordingMiddleware implements MiddlewareInterface

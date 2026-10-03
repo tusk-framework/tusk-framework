@@ -5,10 +5,12 @@ namespace Tusk\Web\Router;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;
+use ReflectionAttribute;
 use ReflectionException;
 use SplFileInfo;
 use Throwable;
 use Tusk\Web\Attribute\Route;
+use Tusk\Web\Attribute\Controller;
 
 class RouteCompiler
 {
@@ -51,8 +53,14 @@ class RouteCompiler
                             
                             $reflection = new ReflectionClass($className);
                             if ($reflection->isInstantiable()) {
+                                $prefix = '';
+                                $controllerAttributes = $reflection->getAttributes(Controller::class);
+                                if ($controllerAttributes !== []) {
+                                    $prefix = $controllerAttributes[0]->newInstance()->prefix;
+                                }
+
                                 foreach ($reflection->getMethods() as $method) {
-                                    $attributes = $method->getAttributes(Route::class);
+                                    $attributes = $method->getAttributes(Route::class, ReflectionAttribute::IS_INSTANCEOF);
                                     
                                     foreach ($attributes as $attribute) {
                                         /** @var Route $route */
@@ -66,7 +74,8 @@ class RouteCompiler
                                         
                                         foreach ((array)$route->methods as $httpMethod) {
                                             $httpMethod = strtoupper($httpMethod);
-                                            $quotedPath = preg_quote($route->path, '#');
+                                            $path = $this->joinPaths($prefix, $route->path);
+                                            $quotedPath = preg_quote($path, '#');
                                             $pattern = preg_replace('/\\\\\{([a-zA-Z0-9_]+)\\\\\}/', '(?P<$1>[^/]+)', $quotedPath);
                                             $pattern = '#^' . $pattern . '$#';
                                             
@@ -170,5 +179,13 @@ class RouteCompiler
         }
         
         return $class ? ($namespace ? $namespace . '\\' . $class : $class) : null;
+    }
+
+    private function joinPaths(string $prefix, string $path): string
+    {
+        $fullPath = trim($prefix, '/') . '/' . trim($path, '/');
+        $fullPath = '/' . trim($fullPath, '/');
+
+        return $fullPath === '/' ? '/' : rtrim($fullPath, '/');
     }
 }
