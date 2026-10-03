@@ -10,6 +10,10 @@ use Tusk\Runtime\Kernel;
 
 final class KernelTestContainer implements ContainerInterface
 {
+    public function instance(string $id, object $instance): void
+    {
+    }
+
     public function get(string $id): object
     {
         return new class {

@@ -33,6 +33,10 @@ class CommandCompiler
 
             /** @var SplFileInfo $file */
             foreach ($files as $file) {
+                if ($file->getFilename() === '.phpstorm.meta.php') {
+                    continue;
+                }
+
                 if ($file->isFile() && $file->getExtension() === 'php') {
                     $className = $this->extractClassName($file->getPathname());
                     
