@@ -5,6 +5,7 @@ namespace Tusk\Cli\Tests\Generator;
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Tester\CommandTester;
+use Tusk\Cli\Commands\InitCommand;
 use Tusk\Cli\Commands\RunCommand;
 use Tusk\Cli\Generator\ProjectGenerator;
 use Tusk\Config\Repository;
@@ -92,8 +93,91 @@ class ProjectGeneratorTest extends TestCase
         $tester = new CommandTester(new RunCommand());
 
         self::assertSame(1, $tester->execute(['file' => $this->directory.'/app.php']));
-        self::assertStringContainsString('Engine', $tester->getDisplay());
+        self::assertStringContainsString('tusk start', $tester->getDisplay());
+        self::assertStringNotContainsString('tusk up', $tester->getDisplay());
         self::assertFileDoesNotExist($this->directory.'/executed');
+    }
+
+    public function test_init_guidance_uses_engine_start_without_compose(): void
+    {
+        $tester = new CommandTester(new InitCommand());
+
+        self::assertSame(0, $tester->execute(['name' => 'sample']));
+        self::assertStringContainsString('tusk start', $tester->getDisplay());
+        self::assertStringNotContainsString('docker-compose', $tester->getDisplay());
+        self::assertStringNotContainsString('docker compose', $tester->getDisplay());
+    }
+
+    public function test_generated_public_entrypoint_preserves_php_request_state(): void
+    {
+        (new ProjectGenerator())->generate('sample', 'api');
+        $root = $this->directory.'/sample';
+        mkdir($root.'/vendor');
+        file_put_contents($root.'/routes/web.php', <<<'PHP'
+<?php
+
+use App\Controller\RequestStateController;
+use Tusk\Web\Router\Router;
+
+return static function (Router $router): void {
+    $router->addRoute(['POST'], '/', [RequestStateController::class, 'index']);
+};
+PHP);
+        file_put_contents($root.'/bootstrap/providers.php', <<<'PHP'
+<?php
+
+use App\Controller\RequestStateController;
+use Tusk\Core\Container\Container;
+
+return static function (Container $container): void {
+    $container->register(RequestStateController::class);
+};
+PHP);
+        file_put_contents($root.'/vendor/autoload.php', '<?php require '.var_export($this->originalDirectory.'/vendor/autoload.php', true).'; require __DIR__."/../app/Controller/RequestStateController.php";');
+        file_put_contents($root.'/app/Controller/RequestStateController.php', <<<'PHP'
+<?php
+
+namespace App\Controller;
+
+use Psr\Http\Message\ResponseInterface;
+use Tusk\Contracts\Attributes\Service;
+use Tusk\Web\Http\Request;
+use Tusk\Web\Http\Response;
+
+#[Service]
+class RequestStateController
+{
+    public function index(Request $request): ResponseInterface
+    {
+        $psrRequest = $request->getPsrRequest();
+
+        return Response::json([
+            'parsed' => $request->getParsedBody(),
+            'cookies' => $psrRequest->getCookieParams(),
+            'uploads' => $psrRequest->getUploadedFiles(),
+        ]);
+    }
+}
+PHP);
+
+        $previous = [$_SERVER, $_POST, $_COOKIE, $_FILES];
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+        $_SERVER['REQUEST_URI'] = '/';
+        $_POST = ['title' => 'Hello'];
+        $_COOKIE = ['session' => 'abc'];
+        $_FILES = ['document' => ['name' => 'notes.txt', 'tmp_name' => '/tmp/notes.txt', 'error' => 0, 'size' => 5, 'type' => 'text/plain']];
+
+        try {
+            ob_start();
+            require $root.'/public/index.php';
+            $payload = json_decode(ob_get_clean(), true, 512, JSON_THROW_ON_ERROR);
+        } finally {
+            [$_SERVER, $_POST, $_COOKIE, $_FILES] = $previous;
+        }
+
+        self::assertSame(['title' => 'Hello'], $payload['parsed']);
+        self::assertSame(['session' => 'abc'], $payload['cookies']);
+        self::assertSame('notes.txt', $payload['uploads']['document']['name']);
     }
 
     public function test_rejects_path_traversal_project_name(): void

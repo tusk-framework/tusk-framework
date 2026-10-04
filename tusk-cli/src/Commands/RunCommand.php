@@ -31,7 +31,7 @@ class RunCommand extends Command
             return self::FAILURE;
         }
 
-        $output->writeln('<error>Application servers are managed by the Tusk Engine. Use `tusk up` from the project directory.</error>');
+        $output->writeln('<error>Application servers are managed by the Tusk Engine. Use `tusk start` from the project directory.</error>');
 
         return self::FAILURE;
     }

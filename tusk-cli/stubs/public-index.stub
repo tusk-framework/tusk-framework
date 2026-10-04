@@ -13,6 +13,10 @@ $request = new ServerRequest(
     '1.1',
     $_SERVER,
 );
+$request = $request
+    ->withParsedBody($_POST)
+    ->withCookieParams($_COOKIE)
+    ->withUploadedFiles($_FILES);
 $response = $application->handle($request);
 http_response_code($response->getStatusCode());
 foreach ($response->getHeaders() as $name => $values) {

@@ -38,7 +38,7 @@ class InitCommand extends Command
             $output->writeln("<info>Project '{$name}' created successfully!</info>");
             $output->writeln("1. cd {$name}");
             $output->writeln("2. composer install");
-            $output->writeln("3. docker-compose up");
+            $output->writeln("3. tusk start");
 
             return self::SUCCESS;
         } catch (\Exception $e) {
