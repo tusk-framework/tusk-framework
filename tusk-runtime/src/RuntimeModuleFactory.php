@@ -7,6 +7,7 @@ namespace Tusk\Runtime;
 use Tusk\Runtime\Modules\RoadRunnerCapabilitiesModule;
 use Tusk\Runtime\Modules\RoadRunnerGrpcModule;
 use Tusk\Runtime\Modules\RuntimeModuleRegistry;
+use Tusk\Runtime\Modules\RuntimeObservabilityModule;
 
 final class RuntimeModuleFactory
 {
@@ -14,6 +15,8 @@ final class RuntimeModuleFactory
     {
         $modules = [];
         $capabilities = [];
+
+        $modules[] = new RuntimeObservabilityModule($configuration->observability());
 
         foreach ($configuration->modules() as $module) {
             if (str_starts_with($module, 'capabilities.')) {

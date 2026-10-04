@@ -7,6 +7,7 @@ use Tusk\Contracts\Core\ApplicationInterface;
 use Tusk\Contracts\Runtime\LifecycleManagerInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
 use Tusk\Runtime\Modules\RuntimeModuleRegistry;
+use Tusk\Runtime\Observability\RuntimeObservability;
 use Tusk\Web\HttpKernel;
 
 final class Kernel implements ApplicationInterface
@@ -22,9 +23,15 @@ final class Kernel implements ApplicationInterface
         private readonly RuntimeAdapterInterface $adapter,
         ?LifecycleManagerInterface $lifecycle = null,
         ?RuntimeModuleRegistry $modules = null,
+        ?RuntimeObservability $observability = null,
     ) {
-        $this->lifecycle = $lifecycle ?? new LifecycleManager($container);
         $this->modules = $modules ?? new RuntimeModuleRegistry;
+        if ($observability === null && $container->has(RuntimeObservability::class)) {
+            $candidate = $container->get(RuntimeObservability::class);
+            $observability = $candidate instanceof RuntimeObservability ? $candidate : null;
+        }
+        $observability?->setRuntime($adapter->getName());
+        $this->lifecycle = $lifecycle ?? new LifecycleManager($container, null, $observability);
     }
 
     public function start(): void

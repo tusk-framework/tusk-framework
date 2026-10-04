@@ -7,6 +7,7 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Runtime\LifecycleManager;
+use Tusk\Runtime\Observability\LifecycleObserverInterface;
 
 final class LifecycleManagerContainer implements ContainerInterface
 {
@@ -50,6 +51,27 @@ final class LifecycleManagerContainer implements ContainerInterface
 
 final class LifecycleManagerTest extends TestCase
 {
+    public function test_observer_failures_do_not_replace_a_handler_exception(): void
+    {
+        $container = new LifecycleManagerContainer;
+        $observer = new FailingLifecycleObserver;
+        $manager = new LifecycleManager($container, null, $observer);
+        $manager->applicationStart();
+        $manager->workerStart();
+        $expected = new RuntimeException('handler failed');
+
+        try {
+            $manager->wrap(static function () use ($expected): never {
+                throw $expected;
+            })();
+            self::fail('The wrapped handler should throw.');
+        } catch (RuntimeException $exception) {
+            self::assertSame($expected, $exception);
+        }
+
+        self::assertSame(1, $observer->requestFinishedCalls);
+    }
+
     public function test_transitions_and_request_wrapper_have_stable_order(): void
     {
         $container = new LifecycleManagerContainer;
@@ -171,4 +193,25 @@ final class LifecycleManagerTest extends TestCase
         ], $container->events);
         self::assertSame(['worker'], $container->resetScopes);
     }
+}
+
+final class FailingLifecycleObserver implements LifecycleObserverInterface
+{
+    public int $requestFinishedCalls = 0;
+
+    public function applicationStarted(): void {}
+
+    public function workerStarted(): void {}
+
+    public function requestStarted(mixed $request = null): void {}
+
+    public function requestFinished(mixed $response = null, ?\Throwable $exception = null): void
+    {
+        $this->requestFinishedCalls++;
+        throw new RuntimeException('telemetry failed');
+    }
+
+    public function workerStopped(): void {}
+
+    public function applicationStopped(): void {}
 }

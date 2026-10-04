@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tusk\Runtime;
 
 use InvalidArgumentException;
+use Tusk\Runtime\Observability\ObservabilityConfiguration;
 
 final class RuntimeConfiguration
 {
@@ -25,6 +26,7 @@ final class RuntimeConfiguration
     private function __construct(
         private readonly string $runtimeAdapter,
         private readonly array $modules,
+        private readonly ObservabilityConfiguration $observability,
     ) {}
 
     public static function fromArray(array $config): self
@@ -33,6 +35,11 @@ final class RuntimeConfiguration
 
         if (! is_array($runtime)) {
             throw new InvalidArgumentException('The runtime configuration must be an array.');
+        }
+
+        $observability = $config['observability'] ?? [];
+        if (! is_array($observability)) {
+            throw new InvalidArgumentException('The observability configuration must be an array.');
         }
 
         $adapter = strtolower(trim((string) ($runtime['adapter'] ?? 'roadrunner')));
@@ -77,7 +84,7 @@ final class RuntimeConfiguration
             }
         }
 
-        return new self($adapter, $normalized);
+        return new self($adapter, $normalized, ObservabilityConfiguration::fromArray($observability));
     }
 
     public function adapter(): string
@@ -91,5 +98,10 @@ final class RuntimeConfiguration
     public function modules(): array
     {
         return $this->modules;
+    }
+
+    public function observability(): ObservabilityConfiguration
+    {
+        return $this->observability;
     }
 }

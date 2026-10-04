@@ -39,6 +39,14 @@ HTTP is the default worker mode and is exposed through the compatibility `RoadRu
 
 The native NDJSON adapter is an explicit migration boundary. It remains useful for compatibility and protocol tests, but it does not implement RoadRunner capabilities.
 
+### 5. Observability and diagnostics
+
+Observability is a runtime module with a no-op provider by default. The module is registered consistently so application services can depend on provider-neutral Tusk contracts without coupling container compilation to a specific exporter.
+
+The runtime emits lifecycle boundaries for application start/stop, worker start/stop, HTTP requests, and queue jobs. WorkerDiagnosticsSnapshot is the stable local/control-plane data shape for counters, durations, memory, lifecycle state, and sanitized failure metadata. It never includes request headers, cookies, bodies, uploads, credentials, tokens, or exception stack traces.
+
+OpenTelemetry is an optional bridge selected through configuration. The first exporter is OTLP over HTTP; exporter and transport failures are recorded and must not replace the application or lifecycle exception that triggered them. The CLI command runtime:diagnostics renders the current process snapshot only. Remote worker health and aggregated fleet state belong to the Tusk Engine control plane.
+
 ## Application Lifecycle in Runtime
 
 ```mermaid

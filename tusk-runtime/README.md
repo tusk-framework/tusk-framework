@@ -8,6 +8,7 @@ The **Tusk Runtime** is the PHP-side integration layer for RoadRunner persistent
 - **Kernel Bridge**: Seamlessly connects the application server to the Tusk application kernel.
 - **Runtime Modules**: HTTP and gRPC worker boundaries plus lifecycle-aware capability modules.
 - **Provider-neutral capabilities**: Jobs, KV, distributed locks, metrics, and PSR-3 logging.
+- **Observability**: Provider-neutral lifecycle telemetry, OpenTelemetry OTLP export, and safe persistent-worker diagnostics.
 
 ## Installation
 Included by default with the Tusk Framework.
@@ -46,6 +47,36 @@ return [
 Tusk's array only selects framework modules. RoadRunner remains the source of truth for drivers, queues, KV storage names, pools, endpoints, TLS, and logging output in `.rr.yaml`.
 
 Selected capability services are exposed through Tusk contracts such as `QueueInterface`, `KeyValueStoreInterface`, `LockInterface`, `MetricsInterface`, and `Psr\Log\LoggerInterface`. The runtime creates one shared `RR_RPC` connection per worker and caches each capability for that worker.
+
+## Observability
+
+The default provider is no-op. Enable OpenTelemetry with the application bootstrap configuration:
+
+```php
+return [
+    'observability' => [
+        'enabled' => true,
+        'service_name' => 'orders',
+        'exporter' => 'otlp',
+        'otlp' => ['endpoint' => 'https://otel-collector.example/v1/traces'],
+        'sample_ratio' => 0.25,
+        'resource' => ['deployment.environment' => 'production'],
+    ],
+];
+```
+
+The endpoint must be an absolute HTTP(S) URL and `sample_ratio` must be between `0.0` and `1.0`. Configuration is validated before the runtime starts. OTLP export uses HTTP; no gRPC PHP extension is required by Tusk's first integration.
+
+Lifecycle instrumentation creates spans for application, worker, HTTP request, and queue job boundaries, and records request/job counters and durations. Exporter failures are logged/countable and never replace an application exception.
+
+Use the CLI command for a local snapshot:
+
+```bash
+bin/tusk runtime:diagnostics
+bin/tusk runtime:diagnostics --json
+```
+
+The command reports the current process and explicitly does not claim to query a remote worker. The Tusk Engine can consume the same `WorkerDiagnosticsSnapshot` contract when its control-plane diagnostics request is implemented.
 
 RoadRunner plugins required by the first-party modules are `jobs`, `kv`, `lock`, `metrics`, and `logger`; the worker must expose `RR_RPC`. A missing plugin or unavailable capability fails with an actionable runtime error.
 
