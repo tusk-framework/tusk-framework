@@ -91,13 +91,6 @@ class ApplicationBuilderTest extends TestCase
         $this->expectExceptionMessage('bootstrap/missing.php');
         Application::configure($this->basePath)->withProviders(['bootstrap/missing.php'])->create();
     }
-
-    public function test_worker_entry_point_is_guarded_without_runtime(): void
-    {
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('worker');
-        Application::configure($this->basePath)->create()->runWorker();
-    }
 }
 
 class BootstrapController

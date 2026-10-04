@@ -4,17 +4,21 @@ namespace Tusk\Foundation;
 
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use RuntimeException;
 use Tusk\Contracts\Core\ApplicationInterface;
 use Tusk\Core\Container\Container;
+use Tusk\Runtime\Adapters\RoadRunnerAdapter;
+use Tusk\Runtime\Kernel;
 use Tusk\Web\HttpKernel;
 
 class Application implements ApplicationInterface
 {
+    private ?Kernel $runtimeKernel = null;
+
     public function __construct(
         private string $basePath,
         private Container $container,
         private HttpKernel $httpKernel,
+        private ?RoadRunnerAdapter $roadRunnerAdapter = null,
     ) {}
 
     public static function configure(string $basePath): ApplicationBuilder
@@ -39,7 +43,8 @@ class Application implements ApplicationInterface
 
     public function runWorker(): void
     {
-        throw new RuntimeException('No worker runtime is configured; worker support is not yet available.');
+        $this->runtimeKernel ??= new Kernel($this->container, $this->roadRunnerAdapter ?? new RoadRunnerAdapter());
+        $this->runtimeKernel->run([$this, 'handle']);
     }
 
     public function start(): void
@@ -49,6 +54,6 @@ class Application implements ApplicationInterface
 
     public function shutdown(): void
     {
-        // The bootstrap owns no persistent runtime until one is installed.
+        $this->runtimeKernel?->shutdown();
     }
 }
