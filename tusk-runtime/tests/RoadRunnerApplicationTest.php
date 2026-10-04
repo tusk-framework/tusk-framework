@@ -85,6 +85,50 @@ class RoadRunnerApplicationTest extends TestCase
         self::assertCount(1, $channel->errors);
     }
 
+    public function test_shutdown_during_request_stops_accepting_requests(): void
+    {
+        $channel = $this->channel([new ServerRequest('GET', '/first'), new ServerRequest('GET', '/second')]);
+        $container = new Container();
+        $hooks = new LifecycleHooks();
+        $container->instance(LifecycleHooks::class, $hooks);
+        $application = new ShutdownDuringRequestApplication(__DIR__, $container, new HttpKernel($container, new Router()), new RoadRunnerAdapter($channel));
+
+        $application->runWorker();
+
+        self::assertSame(['/first'], $application->paths);
+        self::assertCount(1, $channel->responses);
+        self::assertSame(0, $application->shutdownsDuringRequest);
+        self::assertSame(1, $hooks->shutdowns);
+    }
+
+    public function test_shutdown_hook_runs_once_for_service_registered_under_class_and_interface(): void
+    {
+        $channel = $this->channel([]);
+        $container = new Container();
+        $hooks = new LifecycleHooks();
+        $container->instance(LifecycleHooks::class, $hooks);
+        $container->instance(LifecycleHookContract::class, $hooks);
+        $application = new RecordingApplication(__DIR__, $container, new HttpKernel($container, new Router()), new RoadRunnerAdapter($channel));
+
+        $application->runWorker();
+
+        self::assertSame(1, $hooks->starts);
+        self::assertSame(1, $hooks->shutdowns);
+    }
+
+    public function test_legacy_start_hook_can_register_http_kernel_before_it_is_resolved(): void
+    {
+        $channel = $this->channel([]);
+        $container = new Container();
+        $hooks = new HttpKernelRegistrationHook($container);
+        $container->instance(HttpKernelRegistrationHook::class, $hooks);
+
+        (new Kernel($container, new RoadRunnerAdapter($channel)))->start();
+
+        self::assertSame(1, $hooks->starts);
+        self::assertTrue($container->has(HttpKernel::class));
+    }
+
     public function test_legacy_kernel_start_accepts_an_explicit_adapter(): void
     {
         $channel = $this->channel([]);
@@ -137,10 +181,25 @@ class RecordingApplication extends Application
     }
 }
 
+class ShutdownDuringRequestApplication extends RecordingApplication
+{
+    public ?int $shutdownsDuringRequest = null;
+
+    public function handle(ServerRequestInterface $request): ResponseInterface
+    {
+        $this->shutdown();
+        $this->shutdownsDuringRequest = $this->container()->get(LifecycleHooks::class)->shutdowns;
+
+        return parent::handle($request);
+    }
+}
+
 #[Service(scope: 'request')]
 class RequestState {}
 
-class LifecycleHooks
+interface LifecycleHookContract {}
+
+class LifecycleHooks implements LifecycleHookContract
 {
     public int $starts = 0;
     public int $shutdowns = 0;
@@ -155,6 +214,20 @@ class LifecycleHooks
     public function shutdown(): void
     {
         $this->shutdowns++;
+    }
+}
+
+class HttpKernelRegistrationHook
+{
+    public int $starts = 0;
+
+    public function __construct(private Container $container) {}
+
+    #[OnStart]
+    public function registerKernel(): void
+    {
+        $this->starts++;
+        $this->container->instance(HttpKernel::class, new HttpKernel($this->container, new Router()));
     }
 }
 

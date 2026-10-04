@@ -54,7 +54,6 @@ final class Kernel implements ApplicationInterface
         $this->running = true;
         $this->stopping = false;
         $this->inLifecycle = true;
-
         try {
             $this->lifecycle->applicationStart();
             $this->lifecycle->workerStart();

@@ -52,6 +52,7 @@ class Container implements ContainerInterface
     public function instance(string $id, object $instance): void
     {
         $this->instances[$id] = $instance;
+        $this->hooks = array_replace_recursive($this->hooks, [$id => $this->discoverHooks(new ReflectionClass($instance))]);
     }
 
     /**
@@ -190,8 +191,14 @@ class Container implements ContainerInterface
 
             return;
         }
-
+        $seen = [];
         foreach ($this->instances as $instance) {
+            $id = spl_object_id($instance);
+            if (isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
+
             $reflection = new ReflectionClass($instance);
             foreach ($reflection->getMethods() as $method) {
                 if (! empty($method->getAttributes($attributeClass))) {
@@ -204,11 +211,19 @@ class Container implements ContainerInterface
     public function runLifecycleHooks(string $event): void
     {
         $firstFailure = null;
+        $seen = [];
 
         foreach ($this->hooks as $serviceClass => $events) {
+            $instance = $this->get($serviceClass);
+            $id = spl_object_id($instance);
+            if (isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
+
             foreach ($events[$event] ?? [] as $methodName) {
                 try {
-                    $this->get($serviceClass)->{$methodName}();
+                    $instance->{$methodName}();
                 } catch (\Throwable $exception) {
                     $firstFailure ??= $exception;
                 }
