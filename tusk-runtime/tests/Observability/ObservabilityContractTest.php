@@ -12,7 +12,6 @@ use Tusk\Contracts\Observability\SpanInterface;
 use Tusk\Contracts\Observability\TelemetryProviderInterface;
 use Tusk\Contracts\Observability\WorkerDiagnosticsInterface;
 use Tusk\Contracts\Observability\WorkerDiagnosticsSnapshot;
-use Throwable;
 
 final class ObservabilityContractTest extends TestCase
 {

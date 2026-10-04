@@ -27,7 +27,7 @@ class QueueWorkerCommand extends Command
     protected function configure(): void
     {
         $this->setName('queue:work')
-             ->setDescription('Start processing jobs on the queue');
+            ->setDescription('Start processing jobs on the queue');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int

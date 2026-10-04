@@ -9,19 +9,19 @@ class ContainerCompilerTest extends TestCase
 {
     public function test_compiles_container_class_string(): void
     {
-        $compiler = new ContainerCompiler();
-        
+        $compiler = new ContainerCompiler;
+
         $definitions = [
             'App\Services\TestService' => [
                 'class' => 'App\Services\TestService',
                 'interfaces' => ['App\Contracts\TestServiceInterface'],
                 'scope' => 'singleton',
-                'dependencies' => []
-            ]
+                'dependencies' => [],
+            ],
         ];
 
         $code = $compiler->compile($definitions, 'Tusk\TestCompiled', 'TestCompiledContainer');
-        
+
         $this->assertStringContainsString('namespace Tusk\TestCompiled;', $code);
         $this->assertStringContainsString('class TestCompiledContainer implements TuskContainerInterface, ContainerInterface', $code);
         $this->assertStringContainsString('private function resolve_App_Services_TestService(): object', $code);
@@ -30,7 +30,7 @@ class ContainerCompilerTest extends TestCase
 
     public function test_compiles_lifecycle_hooks_as_direct_calls(): void
     {
-        $compiler = new ContainerCompiler();
+        $compiler = new ContainerCompiler;
 
         $code = $compiler->compile([
             'App\\Services\\LifecycleService' => [
@@ -56,7 +56,7 @@ class ContainerCompilerTest extends TestCase
 
     public function test_compiles_nullable_dependencies_as_optional_resolutions(): void
     {
-        $compiler = new ContainerCompiler();
+        $compiler = new ContainerCompiler;
 
         $code = $compiler->compile([
             'App\\Services\\OptionalService' => [

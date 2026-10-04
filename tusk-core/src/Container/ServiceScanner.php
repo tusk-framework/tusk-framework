@@ -2,27 +2,28 @@
 
 namespace Tusk\Core\Container;
 
+use FilesystemIterator;
+use RecursiveCallbackFilterIterator;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use ReflectionClass;
-use ReflectionNamedType;
 use ReflectionException;
-use Tusk\Contracts\Attributes\Service;
+use ReflectionNamedType;
+use SplFileInfo;
+use Throwable;
+use Tusk\Contracts\Attributes\Factory;
 use Tusk\Contracts\Attributes\OnRequestEnd;
 use Tusk\Contracts\Attributes\OnRequestStart;
 use Tusk\Contracts\Attributes\OnShutdown;
 use Tusk\Contracts\Attributes\OnStart;
 use Tusk\Contracts\Attributes\OnWorkerStart;
 use Tusk\Contracts\Attributes\OnWorkerStop;
-use RecursiveDirectoryIterator;
-use RecursiveCallbackFilterIterator;
-use RecursiveIteratorIterator;
-use FilesystemIterator;
-use SplFileInfo;
-use Throwable;
+use Tusk\Contracts\Attributes\Service;
 
 class ServiceScanner
 {
     /**
-     * @param array<string> $directories
+     * @param  array<string>  $directories
      * @return array<string, array{scope: string, class: string, dependencies: array<string>, optional_dependencies: array<string>, interfaces: array<string>, hooks: array<string, list<string>>}>
      */
     public function scan(array $directories): array
@@ -51,24 +52,24 @@ class ServiceScanner
 
                 if ($file->isFile() && $file->getExtension() === 'php') {
                     $className = $this->extractClassName($file->getPathname());
-                    
+
                     if ($className) {
                         try {
-                            if (!class_exists($className) && !interface_exists($className)) {
+                            if (! class_exists($className) && ! interface_exists($className)) {
                                 require_once $file->getPathname();
                             }
-                            
+
                             $reflection = new ReflectionClass($className);
-                            
+
                             if ($reflection->isInstantiable()) {
                                 $serviceAttributes = $reflection->getAttributes(Service::class);
-                                $factoryAttributes = $reflection->getAttributes(\Tusk\Contracts\Attributes\Factory::class);
-                                
-                                if (!empty($serviceAttributes) || !empty($factoryAttributes)) {
-                                    $isFactory = !empty($factoryAttributes);
-                                    
+                                $factoryAttributes = $reflection->getAttributes(Factory::class);
+
+                                if (! empty($serviceAttributes) || ! empty($factoryAttributes)) {
+                                    $isFactory = ! empty($factoryAttributes);
+
                                     if ($isFactory) {
-                                        /** @var \Tusk\Contracts\Attributes\Factory $attr */
+                                        /** @var Factory $attr */
                                         $attr = $factoryAttributes[0]->newInstance();
                                         $provides = $attr->provides;
                                         $scope = $attr->scope;
@@ -78,15 +79,15 @@ class ServiceScanner
                                         $provides = $className;
                                         $scope = $attr->scope;
                                     }
-                                    
+
                                     $dependencies = [];
                                     $optionalDependencies = [];
                                     $constructor = $reflection->getConstructor();
-                                    
+
                                     if ($constructor) {
                                         foreach ($constructor->getParameters() as $param) {
                                             $type = $param->getType();
-                                            if ($type instanceof ReflectionNamedType && !$type->isBuiltin()) {
+                                            if ($type instanceof ReflectionNamedType && ! $type->isBuiltin()) {
                                                 $dependency = $type->getName();
                                                 $dependencies[] = $dependency;
                                                 if ($type->allowsNull()) {
@@ -114,7 +115,7 @@ class ServiceScanner
                                             }
                                         }
                                     }
-                                    
+
                                     $definitions[$className] = [
                                         'class' => $className,
                                         'provides' => $provides,
@@ -143,18 +144,20 @@ class ServiceScanner
     private function extractClassName(string $file): ?string
     {
         $buffer = file_get_contents($file);
-        if (!$buffer) return null;
-        
+        if (! $buffer) {
+            return null;
+        }
+
         $tokens = token_get_all($buffer);
         $namespace = '';
         $class = '';
-        
+
         for ($i = 0; $i < count($tokens); $i++) {
             if (is_array($tokens[$i]) && $tokens[$i][0] === T_NAMESPACE) {
                 for ($j = $i + 1; $j < count($tokens); $j++) {
                     if (is_array($tokens[$j]) && ($tokens[$j][0] === T_NAME_QUALIFIED || $tokens[$j][0] === T_STRING)) {
                         $namespace .= $tokens[$j][1];
-                    } else if ($tokens[$j] === ';' || $tokens[$j] === '{') {
+                    } elseif ($tokens[$j] === ';' || $tokens[$j] === '{') {
                         break;
                     }
                 }
@@ -168,7 +171,7 @@ class ServiceScanner
                 }
             }
         }
-        
-        return $class ? ($namespace ? $namespace . '\\' . $class : $class) : null;
+
+        return $class ? ($namespace ? $namespace.'\\'.$class : $class) : null;
     }
 }

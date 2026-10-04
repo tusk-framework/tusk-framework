@@ -8,8 +8,8 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Throwable;
 use Tusk\Contracts\Observability\SpanInterface;
-use Tusk\Runtime\Observability\OpenTelemetry\OpenTelemetrySpanHandleInterface;
 use Tusk\Runtime\Observability\OpenTelemetry\OpenTelemetryProvider;
+use Tusk\Runtime\Observability\OpenTelemetry\OpenTelemetrySpanHandleInterface;
 use Tusk\Runtime\Observability\OpenTelemetry\OpenTelemetryTransportInterface;
 
 final class OpenTelemetryProviderTest extends TestCase
