@@ -4,6 +4,7 @@ namespace Tusk\Cli\Tests\Generator;
 
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\UploadedFileInterface;
 use Symfony\Component\Console\Tester\CommandTester;
 use Tusk\Cli\Commands\InitCommand;
 use Tusk\Cli\Commands\RunCommand;
@@ -134,12 +135,15 @@ return static function (Container $container): void {
 };
 PHP);
         file_put_contents($root.'/vendor/autoload.php', '<?php require '.var_export($this->originalDirectory.'/vendor/autoload.php', true).'; require __DIR__."/../app/Controller/RequestStateController.php";');
+        $uploadPath = $this->directory.'/nested-upload.txt';
+        file_put_contents($uploadPath, 'nested upload');
         file_put_contents($root.'/app/Controller/RequestStateController.php', <<<'PHP'
 <?php
 
 namespace App\Controller;
 
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\UploadedFileInterface;
 use Tusk\Contracts\Attributes\Service;
 use Tusk\Web\Http\Request;
 use Tusk\Web\Http\Response;
@@ -150,11 +154,30 @@ class RequestStateController
     public function index(Request $request): ResponseInterface
     {
         $psrRequest = $request->getPsrRequest();
+        $uploads = $psrRequest->getUploadedFiles();
+        $cover = $uploads['documents']['cover'] ?? null;
+        $attachment = $uploads['documents']['attachments']['first'] ?? null;
+
+        if (! $cover instanceof UploadedFileInterface || ! $attachment instanceof UploadedFileInterface) {
+            return Response::json(['uploads_are_psr7' => false]);
+        }
 
         return Response::json([
             'parsed' => $request->getParsedBody(),
             'cookies' => $psrRequest->getCookieParams(),
-            'uploads' => $psrRequest->getUploadedFiles(),
+            'uploads_are_psr7' => true,
+            'uploads' => [
+                'cover' => [
+                    'filename' => $cover->getClientFilename(),
+                    'media_type' => $cover->getClientMediaType(),
+                    'size' => $cover->getSize(),
+                    'contents' => (string) $cover->getStream(),
+                ],
+                'attachment' => [
+                    'filename' => $attachment->getClientFilename(),
+                    'contents' => (string) $attachment->getStream(),
+                ],
+            ],
         ]);
     }
 }
@@ -165,7 +188,15 @@ PHP);
         $_SERVER['REQUEST_URI'] = '/';
         $_POST = ['title' => 'Hello'];
         $_COOKIE = ['session' => 'abc'];
-        $_FILES = ['document' => ['name' => 'notes.txt', 'tmp_name' => '/tmp/notes.txt', 'error' => 0, 'size' => 5, 'type' => 'text/plain']];
+        $_FILES = [
+            'documents' => [
+                'name' => ['cover' => 'cover.txt', 'attachments' => ['first' => 'first.txt']],
+                'type' => ['cover' => 'text/plain', 'attachments' => ['first' => 'text/plain']],
+                'tmp_name' => ['cover' => $uploadPath, 'attachments' => ['first' => $uploadPath]],
+                'error' => ['cover' => UPLOAD_ERR_OK, 'attachments' => ['first' => UPLOAD_ERR_OK]],
+                'size' => ['cover' => 13, 'attachments' => ['first' => 13]],
+            ],
+        ];
 
         try {
             ob_start();
@@ -177,7 +208,13 @@ PHP);
 
         self::assertSame(['title' => 'Hello'], $payload['parsed']);
         self::assertSame(['session' => 'abc'], $payload['cookies']);
-        self::assertSame('notes.txt', $payload['uploads']['document']['name']);
+        self::assertTrue($payload['uploads_are_psr7']);
+        self::assertSame('cover.txt', $payload['uploads']['cover']['filename']);
+        self::assertSame('text/plain', $payload['uploads']['cover']['media_type']);
+        self::assertSame(13, $payload['uploads']['cover']['size']);
+        self::assertSame('nested upload', $payload['uploads']['cover']['contents']);
+        self::assertSame('first.txt', $payload['uploads']['attachment']['filename']);
+        self::assertSame('nested upload', $payload['uploads']['attachment']['contents']);
     }
 
     public function test_rejects_path_traversal_project_name(): void
