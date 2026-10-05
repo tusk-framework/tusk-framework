@@ -4,7 +4,6 @@ namespace Tusk\Cli\Tests\Generator;
 
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
-use Psr\Http\Message\UploadedFileInterface;
 use Symfony\Component\Console\Tester\CommandTester;
 use Tusk\Cli\Commands\InitCommand;
 use Tusk\Cli\Commands\RunCommand;
@@ -16,6 +15,7 @@ use Tusk\Web\Router\Router;
 class ProjectGeneratorTest extends TestCase
 {
     private string $directory;
+
     private string $originalDirectory;
 
     protected function setUp(): void
@@ -41,7 +41,7 @@ class ProjectGeneratorTest extends TestCase
 
     public function test_generates_bootstrappable_application_and_minimal_platform_config(): void
     {
-        (new ProjectGenerator())->generate('sample', 'api');
+        (new ProjectGenerator)->generate('sample', 'api');
         $root = $this->directory.'/sample';
 
         foreach (['app/Controller/HomeController.php', 'bootstrap/app.php', 'bootstrap/providers.php', 'config/app.php', 'routes/web.php', 'public/index.php', '.gitignore', 'tusk.json', 'composer.json'] as $file) {
@@ -80,7 +80,7 @@ class ProjectGeneratorTest extends TestCase
         file_put_contents($this->directory.'/sample/.gitignore', "user rules\n");
 
         try {
-            (new ProjectGenerator())->generate('sample', 'api');
+            (new ProjectGenerator)->generate('sample', 'api');
             self::fail('Expected existing directory to be rejected.');
         } catch (\RuntimeException $exception) {
             self::assertStringContainsString('already exists', $exception->getMessage());
@@ -94,7 +94,7 @@ class ProjectGeneratorTest extends TestCase
     public function test_run_command_directs_existing_application_to_engine(): void
     {
         file_put_contents($this->directory.'/app.php', '<?php file_put_contents(__DIR__."/executed", "yes");');
-        $tester = new CommandTester(new RunCommand());
+        $tester = new CommandTester(new RunCommand);
 
         self::assertSame(1, $tester->execute(['file' => $this->directory.'/app.php']));
         self::assertStringContainsString('tusk start', $tester->getDisplay());
@@ -104,7 +104,7 @@ class ProjectGeneratorTest extends TestCase
 
     public function test_init_guidance_uses_engine_start_without_compose(): void
     {
-        $tester = new CommandTester(new InitCommand());
+        $tester = new CommandTester(new InitCommand);
 
         self::assertSame(0, $tester->execute(['name' => 'sample']));
         self::assertStringContainsString('tusk start', $tester->getDisplay());
@@ -114,7 +114,7 @@ class ProjectGeneratorTest extends TestCase
 
     public function test_generated_public_entrypoint_preserves_php_request_state(): void
     {
-        (new ProjectGenerator())->generate('sample', 'api');
+        (new ProjectGenerator)->generate('sample', 'api');
         $root = $this->directory.'/sample';
         mkdir($root.'/vendor');
         file_put_contents($root.'/routes/web.php', <<<'PHP'
@@ -223,6 +223,6 @@ PHP);
     public function test_rejects_path_traversal_project_name(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        (new ProjectGenerator())->generate('../outside', 'api');
+        (new ProjectGenerator)->generate('../outside', 'api');
     }
 }
