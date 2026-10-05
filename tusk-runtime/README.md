@@ -1,21 +1,23 @@
 # Tusk Runtime
 
-The **Tusk Runtime** is the PHP-side integration layer for RoadRunner persistent workers. The legacy native NDJSON loop is retained only as a migration boundary while the Tusk Engine moves its control-plane capabilities above RoadRunner.
+The **Tusk Runtime** is the PHP-side integration layer for RoadRunner persistent workers. The generated application bootstrap composes the application once; RoadRunner owns the PHP worker channel and transport lifecycle, while the Tusk Engine owns the generated `.tusk/runtime/worker.php` control-plane entry point.
 
 ## Features
+
 - **Server Adapter**: RoadRunner and its PSR-7 worker protocol.
 - **Worker Management**: PSR-compliant request handling within a long-lived process.
-- **Kernel Bridge**: Seamlessly connects the application server to the Tusk application kernel.
+- **Kernel Bridge**: Connects the application server to the Tusk application kernel.
 - **Runtime Modules**: HTTP and gRPC worker boundaries plus lifecycle-aware capability modules.
 - **Provider-neutral capabilities**: Jobs, KV, distributed locks, metrics, and PSR-3 logging.
 - **Observability**: Provider-neutral lifecycle telemetry, OpenTelemetry OTLP export, and safe persistent-worker diagnostics.
 
 ## Installation
+
 Included by default with the Tusk Framework.
 
 ## RoadRunner
 
-Copy `.rr.yaml.example` to `.rr.yaml`, adjust the worker command and limits, then start RoadRunner:
+Copy `.rr.yaml.example` to `.rr.yaml`, adjust the worker command and limits, then start RoadRunner through the Tusk Engine:
 
 ```bash
 cp .rr.yaml.example .rr.yaml
@@ -23,6 +25,8 @@ rr serve -c .rr.yaml
 ```
 
 The worker command must not write human-readable output to `STDOUT`; RoadRunner owns that stream. Tusk's lifecycle manager starts and ends each request, including request-scope cleanup, independently of the selected transport.
+
+The generated PHP worker loads `bootstrap/app.php` once and calls `runWorker()`. `Application::handle()` remains the request boundary. Runtime-generated files stay under `.tusk`; application code remains in `bootstrap/`, `config/`, and `routes/`.
 
 ## Runtime configuration
 
@@ -82,10 +86,8 @@ RoadRunner plugins required by the first-party modules are `jobs`, `kv`, `lock`,
 
 ## Worker modes and ownership
 
-The Tusk Engine remains the Go control plane. It starts, monitors, configures, and stops RoadRunner. The PHP runtime manages application lifecycle and adapters, while RoadRunner owns worker pools, supervision, and Goridge IPC.
+The Tusk Engine remains the Go control plane. It generates and validates runtime configuration, starts, monitors, configures, and stops RoadRunner, and performs graceful reload/stop. RoadRunner owns worker pools, supervision, recycling, and Goridge IPC. The PHP runtime manages application lifecycle and adapters; it does not create a second worker pool or proxy.
 
 HTTP uses the compatibility `RoadRunnerAdapter` backed by `RoadRunnerHttpModule`. `RoadRunnerGrpcModule` owns gRPC service registration without exposing the RoadRunner server to application services. Queue production is separate from consumption: `QueueInterface` never starts a consumer pool, and `JobTaskInterface` is used by a future consumer boundary.
 
-The native NDJSON adapter remains an explicit compatibility path and does not emulate RoadRunner capabilities.
-
-The native adapter is not part of the supported platform path and should not be used for new deployments.
+The native NDJSON adapter remains an explicit migration boundary for compatibility and protocol tests. It does not implement RoadRunner capabilities and is not silently selected by generated applications.

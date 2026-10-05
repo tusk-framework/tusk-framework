@@ -52,6 +52,7 @@
     "autoload": {
         "psr-4": {
             "Tusk\\Core\\": "tusk-core/src/",
+            "Tusk\\Foundation\\": "tusk-core/src/Foundation/",
             "Tusk\\Web\\": "tusk-web/src/",
             "Tusk\\Data\\": "tusk-data/src/",
             "Tusk\\Runtime\\": "tusk-runtime/src/",

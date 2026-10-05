@@ -7,7 +7,9 @@ namespace Tusk\Runtime\Modules;
 use Closure;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Spiral\RoadRunner\Http\PSR7Worker;
+use Spiral\RoadRunner\Http\PSR7WorkerInterface;
 use Spiral\RoadRunner\Worker;
+use Spiral\RoadRunner\WorkerInterface;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
 
@@ -15,12 +17,15 @@ final class RoadRunnerHttpModule implements RuntimeAdapterInterface
 {
     private bool $running = false;
 
-    private ?Worker $worker = null;
+    private ?WorkerInterface $worker = null;
 
     /**
      * @param  Closure(): Worker|null  $workerFactory
      */
-    public function __construct(private readonly ?Closure $workerFactory = null) {}
+    public function __construct(
+        private readonly ?Closure $workerFactory = null,
+        private readonly ?PSR7WorkerInterface $channel = null,
+    ) {}
 
     public function start(ContainerInterface $container, callable $requestHandler): void
     {
@@ -31,10 +36,15 @@ final class RoadRunnerHttpModule implements RuntimeAdapterInterface
         $this->running = true;
 
         try {
-            $workerFactory = $this->workerFactory ?? static fn (): Worker => Worker::create();
-            $this->worker = $workerFactory();
-            $psr17Factory = new Psr17Factory;
-            $psr7 = new PSR7Worker($this->worker, $psr17Factory, $psr17Factory, $psr17Factory);
+            $psr7 = $this->channel;
+            if ($psr7 === null) {
+                $workerFactory = $this->workerFactory ?? static fn (): Worker => Worker::create();
+                $this->worker = $workerFactory();
+                $psr17Factory = new Psr17Factory;
+                $psr7 = new PSR7Worker($this->worker, $psr17Factory, $psr17Factory, $psr17Factory);
+            } else {
+                $this->worker = $psr7->getWorker();
+            }
 
             while ($this->running) {
                 try {

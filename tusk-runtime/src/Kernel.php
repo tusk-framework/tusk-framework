@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tusk\Runtime;
 
 use Tusk\Contracts\Container\ContainerInterface;
@@ -13,6 +15,10 @@ use Tusk\Web\HttpKernel;
 final class Kernel implements ApplicationInterface
 {
     private bool $running = false;
+
+    private bool $inLifecycle = false;
+
+    private bool $stopping = false;
 
     private readonly LifecycleManagerInterface $lifecycle;
 
@@ -36,37 +42,56 @@ final class Kernel implements ApplicationInterface
 
     public function start(): void
     {
+        $this->run();
+    }
+
+    public function run(?callable $requestHandler = null): void
+    {
         if ($this->running) {
             return;
         }
 
         $this->running = true;
-
+        $this->stopping = false;
+        $this->inLifecycle = true;
         try {
             $this->lifecycle->applicationStart();
             $this->lifecycle->workerStart();
             $this->modules->start();
-
-            $httpKernel = $this->container->get(HttpKernel::class);
-            $this->adapter->start($this->container, $this->lifecycle->wrap([$httpKernel, 'handle']));
+            $requestHandler ??= [$this->container->get(HttpKernel::class), 'handle'];
+            $this->adapter->start($this->container, $this->lifecycle->wrap($requestHandler));
         } finally {
-            try {
-                $this->modules->stop();
-            } finally {
-                try {
-                    $this->lifecycle->workerStop();
-                } finally {
-                    try {
-                        $this->lifecycle->applicationStop();
-                    } finally {
-                        $this->running = false;
-                    }
-                }
-            }
+            $this->inLifecycle = false;
+            $this->finishShutdown();
         }
     }
 
     public function shutdown(): void
+    {
+        if (! $this->running) {
+            return;
+        }
+
+        if ($this->inLifecycle) {
+            $this->stop();
+
+            return;
+        }
+
+        $this->finishShutdown();
+    }
+
+    public function stop(): void
+    {
+        if (! $this->running || $this->stopping) {
+            return;
+        }
+
+        $this->stopping = true;
+        $this->adapter->stop();
+    }
+
+    private function finishShutdown(): void
     {
         if (! $this->running) {
             return;
@@ -78,14 +103,13 @@ final class Kernel implements ApplicationInterface
             try {
                 $this->lifecycle->workerStop();
             } finally {
-                $this->lifecycle->applicationStop();
-                $this->running = false;
+                try {
+                    $this->lifecycle->applicationStop();
+                } finally {
+                    $this->running = false;
+                    $this->stopping = false;
+                }
             }
         }
-    }
-
-    public function stop(): void
-    {
-        $this->adapter->stop();
     }
 }

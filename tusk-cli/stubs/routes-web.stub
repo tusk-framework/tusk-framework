@@ -1,0 +1,8 @@
+<?php
+
+use App\Controller\HomeController;
+use Tusk\Web\Router\Router;
+
+return static function (Router $router): void {
+    $router->addRoute(['GET'], '/', [HomeController::class, 'index']);
+};

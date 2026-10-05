@@ -5,26 +5,19 @@ namespace Tusk\Cli\Commands;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Tusk\Cli\Attribute\AsCommand;
 use Tusk\Contracts\Attributes\Service;
-use Tusk\Core\Container\Container;
-use Tusk\Runtime\Kernel;
-use Tusk\Runtime\RuntimeAdapterFactory;
-use Tusk\Runtime\RuntimeConfiguration;
-use Tusk\Runtime\RuntimeModuleFactory;
 
 #[Service]
-#[AsCommand('run', 'Run a Tusk application file directly')]
+#[AsCommand('run', 'Run scripts through the Tusk Engine')]
 class RunCommand extends Command
 {
     protected function configure(): void
     {
         $this->setName('run')
-            ->setDescription('Run a Tusk application file directly')
-            ->addArgument('file', InputArgument::REQUIRED, 'The file to run')
-            ->addOption('runtime', null, InputOption::VALUE_REQUIRED, 'Runtime adapter: roadrunner or native');
+            ->setDescription('Run scripts through the Tusk Engine')
+            ->addArgument('file', InputArgument::REQUIRED, 'The file to run');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -38,56 +31,8 @@ class RunCommand extends Command
             return self::FAILURE;
         }
 
-        $container = new Container;
-        $requestedRuntime = $input->getOption('runtime');
+        $output->writeln('<error>Application servers are managed by the Tusk Engine. Use `tusk start` from the project directory.</error>');
 
-        $outputBufferLevel = ob_get_level();
-        ob_start();
-
-        try {
-            $bootstrap = require_once $filePath;
-        } finally {
-            $bootstrapOutput = '';
-            while (ob_get_level() > $outputBufferLevel) {
-                $buffer = ob_get_clean();
-                if ($buffer !== false) {
-                    $bootstrapOutput = $buffer.$bootstrapOutput;
-                }
-            }
-        }
-
-        $bootstrapConfig = is_array($bootstrap) ? $bootstrap : [];
-        if ($requestedRuntime !== null) {
-            $bootstrapConfig['runtime'] = array_replace(
-                is_array($bootstrapConfig['runtime'] ?? null) ? $bootstrapConfig['runtime'] : [],
-                ['adapter' => $requestedRuntime],
-            );
-        }
-
-        $configuration = RuntimeConfiguration::fromArray($bootstrapConfig);
-        $adapter = RuntimeAdapterFactory::create($configuration->adapter());
-
-        if ($adapter->getName() === 'roadrunner') {
-            fwrite(STDERR, "Tusk Framework v0.1.0\nStarting application: {$file}\nRuntime: roadrunner\n");
-            if ($bootstrapOutput !== '') {
-                fwrite(STDERR, $bootstrapOutput);
-            }
-        } else {
-            $output->writeln('<info>Tusk Framework v0.1.0</info>');
-            $output->writeln("Starting application: {$file}");
-            $output->writeln("Runtime: {$adapter->getName()}");
-            if ($bootstrapOutput !== '') {
-                $output->write($bootstrapOutput);
-            }
-        }
-
-        $modules = RuntimeModuleFactory::fromConfiguration($configuration);
-        $modules->register($container);
-
-        $kernel = new Kernel($container, $adapter, null, $modules);
-
-        $kernel->start();
-
-        return self::SUCCESS;
+        return self::FAILURE;
     }
 }
