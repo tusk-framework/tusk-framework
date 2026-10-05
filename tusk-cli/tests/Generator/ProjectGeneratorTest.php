@@ -44,9 +44,10 @@ class ProjectGeneratorTest extends TestCase
         (new ProjectGenerator())->generate('sample', 'api');
         $root = $this->directory.'/sample';
 
-        foreach (['app/Controller/HomeController.php', 'bootstrap/app.php', 'bootstrap/providers.php', 'config/app.php', 'routes/web.php', 'public/index.php', 'tusk.json', 'composer.json'] as $file) {
+        foreach (['app/Controller/HomeController.php', 'bootstrap/app.php', 'bootstrap/providers.php', 'config/app.php', 'routes/web.php', 'public/index.php', '.gitignore', 'tusk.json', 'composer.json'] as $file) {
             self::assertFileExists($root.'/'.$file);
         }
+        self::assertStringContainsString('/.tusk/', file_get_contents($root.'/.gitignore'));
         self::assertDirectoryDoesNotExist($root.'/.tusk');
         self::assertFileDoesNotExist($root.'/.tusk/runtime/worker.php');
         self::assertSame(['port' => 8080, 'worker_count' => 4], json_decode(file_get_contents($root.'/tusk.json'), true, 512, JSON_THROW_ON_ERROR));
@@ -76,6 +77,7 @@ class ProjectGeneratorTest extends TestCase
     {
         mkdir($this->directory.'/sample/bootstrap', 0777, true);
         file_put_contents($this->directory.'/sample/bootstrap/app.php', 'user owned');
+        file_put_contents($this->directory.'/sample/.gitignore', "user rules\n");
 
         try {
             (new ProjectGenerator())->generate('sample', 'api');
@@ -85,6 +87,7 @@ class ProjectGeneratorTest extends TestCase
         }
 
         self::assertSame('user owned', file_get_contents($this->directory.'/sample/bootstrap/app.php'));
+        self::assertSame("user rules\n", file_get_contents($this->directory.'/sample/.gitignore'));
         self::assertFileDoesNotExist($this->directory.'/sample/tusk.json');
     }
 

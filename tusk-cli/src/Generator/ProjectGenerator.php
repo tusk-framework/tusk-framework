@@ -24,6 +24,7 @@ class ProjectGenerator
             'public-index.stub' => 'public/index.php',
             'routes-web.stub' => 'routes/web.php',
             'config-app.stub' => 'config/app.php',
+            'gitignore.stub' => '.gitignore',
         ] as $stub => $destination) {
             file_put_contents($baseDir.'/'.$destination, file_get_contents(__DIR__.'/../../stubs/'.$stub));
         }

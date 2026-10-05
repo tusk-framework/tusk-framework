@@ -14,6 +14,7 @@ RoadRunner owns HTTP transport, Goridge, worker pooling, recycling, and process 
 
 `Tusk\Runtime\LifecycleManager` owns application, worker, and request transitions. The Kernel starts the application and worker, wraps the transport handler, and always performs worker/application teardown when the adapter exits. Request cleanup runs exactly once in a `finally` path and preserves the handler's original exception when cleanup also fails.
 
+<<<<<<< HEAD
 Each hook runs once per service object even when the container exposes it under multiple keys. The same application handles every request in that worker. Calling `Application::shutdown()` during a request signals the adapter to stop accepting requests and defers shutdown hooks until the loop exits.
 
 Runtime adapters own only transport and blocking concerns. RoadRunner is the primary transport; the native NDJSON loop remains a compatibility adapter. Neither adapter creates or resets container scopes.
@@ -84,3 +85,10 @@ Temporal is intentionally reserved as a future capability and worker-mode extens
 
 ---
 *Status: Draft v0.2*
+Application configuration belongs in `config/*.php`. Engine and platform settings belong in `tusk.json`, and Composer owns dependencies and the lockfile. Generated runtime files stay under the project's `.tusk` directory. User-owned `bootstrap/`, `config/`, and `routes/` files are not generated over.
+
+The Engine integration smoke test consumes the Framework from the coordinated
+`codex/tusk-bootstrap` branch at an exact commit SHA. Publish that Framework
+branch before publishing the Engine change; the Engine workflow verifies the
+published branch tip and fails if it is unavailable or has moved. Do not
+replace the branch with an unpublished local SHA or a moving legacy default.

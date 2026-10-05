@@ -125,6 +125,18 @@ Tusk achieves **Maximum Performance** using its CLI compiler:
 
 ## License
 
+## Engine integration contract
+
+The generated application is designed to run under the Tusk Engine's
+RoadRunner control plane. Engine-owned runtime state belongs in `.tusk/` and
+is excluded by the generated project's `.gitignore`; the generator does not
+modify an existing project directory.
+
+For the coordinated skeleton smoke test, publish the Framework branch
+`codex/tusk-bootstrap` before publishing the Engine change. The Engine CI
+fetches that branch and verifies its exact pinned commit SHA, so an unpublished
+local Framework object cannot become a silent legacy fallback.
+
 Tusk Framework is open-source software licensed under the [MIT License](LICENSE).
 
 ---
