@@ -6,112 +6,61 @@ class ProjectGenerator
 {
     public function generate(string $name, string $type): void
     {
-        $baseDir = getcwd().'/'.$name;
+        if (! preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/', $name)) {
+            throw new \InvalidArgumentException('Project name must be a single directory name.');
+        }
 
-        if (is_dir($baseDir)) {
+        $baseDir = getcwd().'/'.$name;
+        if (file_exists($baseDir)) {
             throw new \RuntimeException("Directory '$name' already exists!");
         }
 
-        mkdir($baseDir, 0755, true);
-        mkdir("$baseDir/src/Controller", 0755, true);
-        mkdir("$baseDir/public", 0755, true);
-        mkdir("$baseDir/config", 0755, true);
+        foreach (['app/Controller', 'bootstrap', 'config', 'routes', 'public'] as $directory) {
+            mkdir($baseDir.'/'.$directory, 0755, true);
+        }
 
-        // 1. composer.json
-        file_put_contents("$baseDir/composer.json", $this->getComposerJson($name, $type));
+        foreach ([
+            'bootstrap-app.stub' => 'bootstrap/app.php',
+            'public-index.stub' => 'public/index.php',
+            'routes-web.stub' => 'routes/web.php',
+            'config-app.stub' => 'config/app.php',
+        ] as $stub => $destination) {
+            file_put_contents($baseDir.'/'.$destination, file_get_contents(__DIR__.'/../../stubs/'.$stub));
+        }
 
-        // 2. docker-compose.yml
-        file_put_contents("$baseDir/docker-compose.yml", $this->getDockerCompose($name, $type));
+        file_put_contents($baseDir.'/app/Controller/HomeController.php', $this->getHomeController());
+        file_put_contents($baseDir.'/bootstrap/providers.php', <<<'PHP'
+<?php
 
-        // 3. .env
-        file_put_contents("$baseDir/.env", "APP_ENV=dev\nDB_CONNECTION=mysql://user:secret@db:3306/app\n");
+use App\Controller\HomeController;
+use Tusk\Core\Container\Container;
 
-        // 4. public/index.php
-        file_put_contents("$baseDir/public/index.php", $this->getIndexPhp());
-
-        // 5. src/Controller/HomeController.php
-        file_put_contents("$baseDir/src/Controller/HomeController.php", $this->getHomeController());
-
-        // 6. Copy framework files for local dev (Since we are in monorepo)
-        // In real world, `composer install` handles this.
-        // For verify_gen.php, we might need to manually link or just assume composer install works if internet is available.
+return static function (Container $container): void {
+    $container->register(HomeController::class);
+};
+PHP);
+        file_put_contents($baseDir.'/composer.json', $this->getComposerJson($name));
+        file_put_contents($baseDir.'/tusk.json', json_encode([
+            'port' => 8080,
+            'worker_count' => 4,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
     }
 
-    private function getComposerJson(string $name, string $type): string
+    private function getComposerJson(string $name): string
     {
         return json_encode([
             'name' => "app/$name",
             'type' => 'project',
             'require' => [
                 'php' => '^8.2',
-                'tusk/framework' => 'dev-main', // Assuming dev-main for now
+                'tusk/framework' => 'dev-main',
             ],
             'autoload' => [
                 'psr-4' => [
-                    'App\\' => 'src/',
+                    'App\\' => 'app/',
                 ],
             ],
-            'repositories' => [
-                [
-                    'type' => 'path',
-                    'url' => '../tusk-framework', // HACK: for local dev verification
-                ],
-            ],
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-    }
-
-    private function getDockerCompose(string $name, string $type): string
-    {
-        return <<<'YAML'
-services:
-  app:
-    image: php:8.2-cli
-    volumes:
-      - ./:/app
-    working_dir: /app
-    command: php -S 0.0.0.0:8000 -t public
-    ports:
-      - "8000:8000"
-    depends_on:
-      - db
-
-  db:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: secret
-      MYSQL_DATABASE: app
-YAML;
-    }
-
-    private function getIndexPhp(): string
-    {
-        return <<<'PHP'
-<?php
-
-require_once __DIR__ . '/../vendor/autoload.php';
-
-use Tusk\Runtime\Kernel;
-use Tusk\Core\Container\Container;
-use Tusk\Web\HttpKernel;
-use Tusk\Web\Router\Router;
-use Tusk\Web\Http\Request;
-
-// Bootstrap
-$container = new Container();
-$router = new Router();
-
-// Register Controllers
-$router->registerControllers([
-    \App\Controller\HomeController::class
-]);
-
-$kernel = new HttpKernel($container, $router);
-
-// Handle Request
-$request = Request::createFromGlobals();
-$response = $kernel->handle($request);
-$response->send();
-PHP;
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
     }
 
     private function getHomeController(): string
@@ -121,19 +70,17 @@ PHP;
 
 namespace App\Controller;
 
-use Tusk\Web\Attribute\Route;
 use Tusk\Web\Http\Request;
 use Tusk\Web\Http\Response;
+use Psr\Http\Message\ResponseInterface;
+use Tusk\Contracts\Attributes\Service;
 
+#[Service]
 class HomeController
 {
-    #[Route('/', methods: ['GET'])]
-    public function index(Request $request): Response
+    public function index(Request $request): ResponseInterface
     {
-        return new Response(200, ['Content-Type' => 'application/json'], json_encode([
-            'message' => 'Welcome to Tusk!',
-            'version' => '0.7.0'
-        ]));
+        return Response::html('Welcome to Tusk!');
     }
 }
 PHP;
