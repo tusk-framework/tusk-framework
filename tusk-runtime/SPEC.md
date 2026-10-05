@@ -14,7 +14,6 @@ RoadRunner owns HTTP transport, Goridge, worker pooling, recycling, and process 
 
 `Tusk\Runtime\LifecycleManager` owns application, worker, and request transitions. The Kernel starts the application and worker, wraps the transport handler, and always performs worker/application teardown when the adapter exits. Request cleanup runs exactly once in a `finally` path and preserves the handler's original exception when cleanup also fails.
 
-<<<<<<< HEAD
 Each hook runs once per service object even when the container exposes it under multiple keys. The same application handles every request in that worker. Calling `Application::shutdown()` during a request signals the adapter to stop accepting requests and defers shutdown hooks until the loop exits.
 
 Runtime adapters own only transport and blocking concerns. RoadRunner is the primary transport; the native NDJSON loop remains a compatibility adapter. Neither adapter creates or resets container scopes.
