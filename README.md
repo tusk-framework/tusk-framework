@@ -6,6 +6,8 @@
 [![PHP Version](https://img.shields.io/badge/PHP-8.2%2B-777BB4.svg)](https://www.php.net/)
 [![Documentation](https://img.shields.io/badge/docs-tusk--framework.github.io-green.svg)](https://tusk-framework.github.io/tusk-docs/)
 
+[Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md)
+
 ---
 
 ## What is Tusk Framework?
@@ -121,6 +123,17 @@ Tusk achieves **Maximum Performance** using its CLI compiler:
 - **Zero-Reflection**: At runtime, there are no heavy reflection calls.
 - **Unified DX**: The `bin/tusk build` binary orchestrates the compilation of DI, Routes, and Commands.
 
+## Contributing and release integrity
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the PHP and Composer development
+workflow, package boundaries, testing expectations, Conventional Commits, and
+pull request guidance. Community participation follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Framework releases are versioned from Conventional Commits and must pass the
+PHP compatibility matrix before publication. Release artifacts and provenance
+are produced from the reviewed source tree; private signing material is never
+committed to the repository.
+
 ---
 
 ## License
@@ -133,7 +146,7 @@ is excluded by the generated project's `.gitignore`; the generator does not
 modify an existing project directory.
 
 For the coordinated skeleton smoke test, publish the Framework branch
-`codex/tusk-bootstrap` before publishing the Engine change. The Engine CI
+`feature/tusk-bootstrap` before publishing the Engine change. The Engine CI
 fetches that branch and verifies its exact pinned commit SHA, so an unpublished
 local Framework object cannot become a silent legacy fallback.
 
