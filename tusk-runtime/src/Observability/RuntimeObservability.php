@@ -11,7 +11,7 @@ use Tusk\Contracts\Observability\SpanInterface;
 use Tusk\Contracts\Observability\TelemetryProviderInterface;
 use Tusk\Contracts\Observability\WorkerDiagnosticsInterface;
 
-final class RuntimeObservability implements LifecycleObserverInterface
+final class RuntimeObservability implements LifecycleObserverInterface, RequestScopeObserverInterface
 {
     private ?SpanInterface $requestSpan = null;
 
@@ -38,6 +38,11 @@ final class RuntimeObservability implements LifecycleObserverInterface
     public function diagnostics(): WorkerDiagnosticsInterface
     {
         return $this->collector;
+    }
+
+    public function requestScopeReset(bool $anomaly = false): void
+    {
+        $this->collector->requestScopeReset($anomaly);
     }
 
     public function applicationStarted(): void

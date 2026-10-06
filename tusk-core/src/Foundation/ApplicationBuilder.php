@@ -8,6 +8,8 @@ use Tusk\Config\Repository;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Core\ApplicationInterface;
 use Tusk\Core\Container\Container;
+use Tusk\Runtime\RuntimeConfiguration;
+use Tusk\Runtime\RuntimeModuleFactory;
 use Tusk\Web\HttpKernel;
 use Tusk\Web\Router\Router;
 use Tusk\Web\Router\RouterInterface;
@@ -52,11 +54,13 @@ class ApplicationBuilder
 
     public function create(): Application
     {
-        $container = new Container();
-        $router = new Router();
-        $config = new Repository($this->loadConfig());
+        $container = new Container;
+        $router = new Router;
+        $values = $this->loadConfig();
+        $config = new Repository($values);
+        $runtimeModules = RuntimeModuleFactory::fromConfiguration(RuntimeConfiguration::fromArray($values));
         $kernel = new HttpKernel($container, $router);
-        $application = new Application($this->basePath, $container, $kernel);
+        $application = new Application($this->basePath, $container, $kernel, runtimeModules: $runtimeModules);
 
         foreach ([
             Container::class => $container,

@@ -8,6 +8,7 @@ use Tusk\Contracts\Core\ApplicationInterface;
 use Tusk\Core\Container\Container;
 use Tusk\Runtime\Adapters\RoadRunnerAdapter;
 use Tusk\Runtime\Kernel;
+use Tusk\Runtime\Modules\RuntimeModuleRegistry;
 use Tusk\Web\HttpKernel;
 
 class Application implements ApplicationInterface
@@ -19,7 +20,13 @@ class Application implements ApplicationInterface
         private Container $container,
         private HttpKernel $httpKernel,
         private ?RoadRunnerAdapter $roadRunnerAdapter = null,
-    ) {}
+        ?RuntimeModuleRegistry $runtimeModules = null,
+    ) {
+        $this->runtimeModules = $runtimeModules ?? new RuntimeModuleRegistry;
+        $this->runtimeModules->register($this->container);
+    }
+
+    private readonly RuntimeModuleRegistry $runtimeModules;
 
     public static function configure(string $basePath): ApplicationBuilder
     {
@@ -43,7 +50,11 @@ class Application implements ApplicationInterface
 
     public function runWorker(): void
     {
-        $this->runtimeKernel ??= new Kernel($this->container, $this->roadRunnerAdapter ?? new RoadRunnerAdapter());
+        $this->runtimeKernel ??= new Kernel(
+            $this->container,
+            $this->roadRunnerAdapter ?? new RoadRunnerAdapter,
+            modules: $this->runtimeModules,
+        );
         $this->runtimeKernel->run([$this, 'handle']);
     }
 
