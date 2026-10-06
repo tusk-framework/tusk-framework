@@ -149,7 +149,7 @@ Tests must cover behavior with real Tusk objects and small fakes:
 
 - Existing applications remain unchanged with the default no-op provider.
 - Existing lifecycle hooks and runtime adapters continue to work.
-- RoadRunner remains the supported production runtime; native remains a compatibility adapter with the same diagnostics contract.
+- RoadRunner is the supported production runtime and owns the diagnostics boundary.
 - The OpenTelemetry bridge is additive and can be enabled per application.
 - The Engine can adopt the snapshot contract later without changing PHP application code.
 

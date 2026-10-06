@@ -26,3 +26,14 @@ jobs:
 
     - name: Install Dependencies
       run: composer install --prefer-dist --no-progress
+
+    - name: Guard the RoadRunner-only runtime boundary
+      run: |
+        if rg -n 'NativeLoopAdapter|NdjsonRequestFactory|SwooleAdapter|fgets\(STDIN\)|fwrite\(STDOUT\)' tusk-runtime/src; then
+          echo 'Removed runtime transport markers found in tusk-runtime/src.'
+          exit 1
+        fi
+        if rg -n 'NativeLoopAdapter|NdjsonRequestFactory|SwooleAdapter|NDJSON' README.md tusk-runtime/README.md tusk-runtime/SPEC.md tusk-contracts; then
+          echo 'Removed runtime markers found in active Framework documentation or contracts.'
+          exit 1
+        fi

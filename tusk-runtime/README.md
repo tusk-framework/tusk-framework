@@ -24,7 +24,7 @@ cp .rr.yaml.example .rr.yaml
 rr serve -c .rr.yaml
 ```
 
-The worker command must not write human-readable output to `STDOUT`; RoadRunner owns that stream. Tusk's lifecycle manager starts and ends each request, including request-scope cleanup, independently of the selected transport.
+RoadRunner owns the worker transport and process channel. The Tusk Runtime does not implement a second application transport; application output must not corrupt the RoadRunner channel. Tusk's lifecycle manager starts and ends each request, including request-scope cleanup.
 
 The generated PHP worker loads `bootstrap/app.php` once and calls `runWorker()`. `Application::handle()` remains the request boundary. Runtime-generated files stay under `.tusk`; application code remains in `bootstrap/`, `config/`, and `routes/`.
 
@@ -88,6 +88,6 @@ RoadRunner plugins required by the first-party modules are `jobs`, `kv`, `lock`,
 
 The Tusk Engine remains the Go control plane. It generates and validates runtime configuration, starts, monitors, configures, and stops RoadRunner, and performs graceful reload/stop. RoadRunner owns worker pools, supervision, recycling, and Goridge IPC. The PHP runtime manages application lifecycle and adapters; it does not create a second worker pool or proxy.
 
-HTTP uses the compatibility `RoadRunnerAdapter` backed by `RoadRunnerHttpModule`. `RoadRunnerGrpcModule` owns gRPC service registration without exposing the RoadRunner server to application services. Queue production is separate from consumption: `QueueInterface` never starts a consumer pool, and `JobTaskInterface` is used by a future consumer boundary.
+HTTP uses `RoadRunnerAdapter` backed by `RoadRunnerHttpModule`. `RoadRunnerGrpcModule` owns gRPC service registration without exposing the RoadRunner server to application services. Queue production is separate from consumption: `QueueInterface` never starts a consumer pool, and `JobTaskInterface` is used by a future consumer boundary.
 
-The native NDJSON adapter remains an explicit migration boundary for compatibility and protocol tests. It does not implement RoadRunner capabilities and is not silently selected by generated applications.
+RoadRunner is the only supported runtime adapter. Unsupported legacy runtime selections are rejected with an actionable error directing applications to `roadrunner`.

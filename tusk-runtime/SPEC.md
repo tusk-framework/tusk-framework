@@ -16,7 +16,7 @@ RoadRunner owns HTTP transport, Goridge, worker pooling, recycling, and process 
 
 Each hook runs once per service object even when the container exposes it under multiple keys. The same application handles every request in that worker. Calling `Application::shutdown()` during a request signals the adapter to stop accepting requests and defers shutdown hooks until the loop exits.
 
-Runtime adapters own only transport and blocking concerns. RoadRunner is the primary transport; the native NDJSON loop remains a compatibility adapter. Neither adapter creates or resets container scopes.
+The runtime owns no alternate transport loop. RoadRunner is the only transport and owns the worker channel, process supervision, and blocking concerns; Tusk does not implement a second application data plane. The adapter does not create or reset container scopes.
 
 ## Runtime ownership
 
@@ -36,9 +36,9 @@ All RPC-backed capabilities share one RPC factory per worker. `RR_RPC` is suppli
 
 ## Worker modes
 
-HTTP is the default worker mode and is exposed through the compatibility `RoadRunnerAdapter` backed by `RoadRunnerHttpModule`. gRPC has an explicit `RoadRunnerGrpcModule` service registry. Both preserve the same application/worker lifecycle; the transport does not own lifecycle state.
+HTTP is the default worker mode and is exposed through `RoadRunnerAdapter` backed by `RoadRunnerHttpModule`. gRPC has an explicit `RoadRunnerGrpcModule` service registry. Both preserve the same application/worker lifecycle; the transport does not own lifecycle state.
 
-The native NDJSON adapter is an explicit migration boundary. It remains useful for compatibility and protocol tests, but it does not implement RoadRunner capabilities and is never selected implicitly by the generated worker.
+RoadRunner is the only supported worker adapter. Unsupported legacy runtime selections are rejected during runtime configuration with an actionable message to use `roadrunner`.
 
 ## Observability and diagnostics
 

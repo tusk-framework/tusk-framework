@@ -6,7 +6,6 @@ namespace Tusk\Runtime\Tests;
 
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
-use Tusk\Runtime\Adapters\NativeLoopAdapter;
 use Tusk\Runtime\Adapters\RoadRunnerAdapter;
 use Tusk\Runtime\RuntimeAdapterFactory;
 
@@ -25,24 +24,36 @@ final class RuntimeAdapterFactoryTest extends TestCase
         self::assertInstanceOf(RoadRunnerAdapter::class, $adapter);
     }
 
-    public function test_native_runtime_is_available_as_an_explicit_compatibility_mode(): void
+    public function test_roadrunner_alias_is_the_only_explicit_runtime_selection(): void
     {
-        $adapter = RuntimeAdapterFactory::create('native');
+        $adapter = RuntimeAdapterFactory::create('rr');
 
-        self::assertInstanceOf(NativeLoopAdapter::class, $adapter);
+        self::assertInstanceOf(RoadRunnerAdapter::class, $adapter);
     }
 
-    public function test_environment_can_select_the_runtime(): void
+    public function test_native_runtime_is_rejected_with_an_actionable_message(): void
     {
         putenv('TUSK_RUNTIME=native');
 
-        self::assertInstanceOf(NativeLoopAdapter::class, RuntimeAdapterFactory::create());
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Supported runtimes: roadrunner');
+
+        RuntimeAdapterFactory::create();
+    }
+
+    public function test_swoole_runtime_is_rejected_with_an_actionable_message(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Supported runtimes: roadrunner');
+
+        RuntimeAdapterFactory::create('swoole');
     }
 
     public function test_unknown_runtime_is_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Supported runtimes: roadrunner');
 
-        RuntimeAdapterFactory::create('swoole');
+        RuntimeAdapterFactory::create('unknown');
     }
 }

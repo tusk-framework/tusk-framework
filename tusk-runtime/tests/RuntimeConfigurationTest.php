@@ -39,15 +39,25 @@ final class RuntimeConfigurationTest extends TestCase
         ]);
     }
 
-    public function test_native_runtime_rejects_roadrunner_only_modules(): void
+    public function test_native_runtime_configuration_is_rejected_with_an_actionable_message(): void
     {
-        $this->expectExceptionMessage('requires the RoadRunner adapter');
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unsupported runtime adapter "native". Supported adapters: roadrunner.');
 
         RuntimeConfiguration::fromArray([
             'runtime' => [
                 'adapter' => 'native',
-                'modules' => ['http', 'capabilities.kv'],
             ],
+        ]);
+    }
+
+    public function test_swoole_runtime_configuration_is_rejected_with_an_actionable_message(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unsupported runtime adapter "swoole". Supported adapters: roadrunner.');
+
+        RuntimeConfiguration::fromArray([
+            'runtime' => ['adapter' => 'swoole'],
         ]);
     }
 }

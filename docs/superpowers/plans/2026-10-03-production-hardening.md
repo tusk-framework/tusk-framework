@@ -4,7 +4,7 @@
 
 **Goal:** Tornar o framework PHP seguro e previsível para aplicações de longa duração sem quebrar as interfaces públicas existentes.
 
-**Architecture:** Preservar PSR-7 e os adapters atuais. Corrigir o fluxo de contexto no `HttpKernel`, centralizar a política de erro, tornar guards request-safe e fazer a fila usar claim atômico. O contrato NDJSON será mantido e coberto por testes de conversão.
+**Architecture:** Preservar PSR-7 e o adapter RoadRunner. Corrigir o fluxo de contexto no `HttpKernel`, centralizar a política de erro, tornar guards request-safe e fazer a fila usar claim atômico. O worker RoadRunner é o único contrato de transporte.
 
 **Tech Stack:** PHP 8.2+, PHPUnit 10, PHPStan 2, PSR-7, Doctrine DBAL, firebase/php-jwt.
 
@@ -14,9 +14,9 @@
 
 - `JWT_SECRET` deve ter pelo menos 32 bytes; ausência ou valor curto falha fechado.
 - `APP_DEBUG` aceita apenas `1`, `true`, `yes` ou `on` como habilitado; default é `false`.
-- O contrato NDJSON continua usando `method`, `url`, `headers`, `cookies`, `query`, `body`, `parsedBody`, `uploadedFiles`, `status` e `body`.
+- O contrato PSR-7 continua usando requests e responses HTTP completos.
 - Não reescrever o container nem trocar PSR-7 nesta entrega.
-- Recursos incompletos como Swoole e cliente cloud HTTP permanecem fora do escopo e serão issues.
+- Cliente cloud HTTP permanece fora do escopo e será tratado em issue própria.
 
 ## Review Focus
 
@@ -24,7 +24,7 @@
 - Uma requisição com token somente na query string não deve autenticar por padrão — Task 1.
 - Uma exceção com `Accept: application/json` não deve revelar arquivo, linha ou mensagem quando debug está desligado — Task 2.
 - Dois consumidores não podem obter o mesmo job, e jobs abandonados devem voltar após 300 segundos — Task 4.
-- Um upload NDJSON deve produzir `UploadedFileInterface` e ser limpo ao final da requisição — Task 3.
+- Um upload PSR-7 deve produzir `UploadedFileInterface` e ser limpo ao final da requisição — Task 3.
 
 ### Task 1: Request accessors and fail-closed authentication
 
@@ -68,24 +68,20 @@
 - [ ] **Step 4: Run focused tests and the existing web integration suite.** Confirm both normal and not-found routes remain unchanged.
 - [ ] **Step 5: Commit** `fix: enforce route security and redact errors`.
 
-### Task 3: NDJSON request conversion and request-scope cleanup
+### Task 3: RoadRunner request conversion and request-scope cleanup
 
 **Files:**
-- Create: `tusk-runtime/src/Adapters/NdjsonRequestFactory.php`
-- Modify: `tusk-runtime/src/Adapters/NativeLoopAdapter.php`
 - Modify: `tusk-runtime/src/Adapters/RoadRunnerAdapter.php` if shared cleanup behavior is needed
-- Create: `tusk-runtime/tests/Adapters/NdjsonRequestFactoryTest.php`
-- Create: `tusk-runtime/tests/Adapters/NativeLoopAdapterTest.php`
+- Modify: `tusk-runtime/tests/Adapters/RoadRunnerAdapterTest.php`
 
 **Interfaces:**
-- `NdjsonRequestFactory::fromArray(array $data): ServerRequestInterface` creates PSR-7 requests and nested `UploadedFileInterface` values.
-- `NdjsonRequestFactory::toArray(ResponseInterface $response): array` returns the stable NDJSON response shape.
+- `RoadRunnerAdapter` receives PSR-7 requests and returns PSR-7 responses through the worker channel.
 
 - [ ] **Step 1: Write failing tests** for headers, cookies, query, parsed body, single/multiple uploads, invalid upload metadata, and response conversion.
 - [ ] **Step 2: Run the focused tests** and confirm uploads are currently absent or ignored.
-- [ ] **Step 3: Implement the factory** with safe file metadata handling and use it from `NativeLoopAdapter`; ensure request scope reset runs in one `finally` block per request.
+- [ ] **Step 3: Keep request scope reset in one `finally` block per request through the shared lifecycle manager.
 - [ ] **Step 4: Run focused tests and runtime tests**; confirm malformed input produces a controlled 400/500 response without terminating the worker loop.
-- [ ] **Step 5: Commit** `feat: preserve uploads in native worker requests`.
+- [ ] **Step 5: Commit** `feat: preserve uploads in RoadRunner requests`.
 
 ### Task 4: Atomic database queue claims and recovery
 
@@ -111,6 +107,6 @@
 
 - [ ] **Step 1: Run** `vendor/bin/phpunit` and record the complete result.
 - [ ] **Step 2: Run** `vendor/bin/phpstan analyse` and record the complete result.
-- [ ] **Step 3: Review the diff and verify no public API or NDJSON field was removed.
+- [ ] **Step 3: Review the diff and verify no public PSR-7 API field was removed.
 - [ ] **Step 4: Create public GitHub issues only for intentionally deferred features, each with reproduction/context, scope, and acceptance criteria.
 - [ ] **Step 5: Commit** `docs: document production hardening status` if README changed; otherwise record the clean verification without creating an empty commit.

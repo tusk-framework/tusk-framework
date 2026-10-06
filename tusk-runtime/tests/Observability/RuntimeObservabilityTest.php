@@ -54,7 +54,7 @@ final class RuntimeObservabilityTest extends TestCase
         $clock = new RuntimeObservabilityClock;
         $collector = new WorkerDiagnosticsCollector($clock);
         $provider = new RecordingTelemetryProvider;
-        $observability = new RuntimeObservability($provider, $collector, $clock, 'native', 'worker-1');
+        $observability = new RuntimeObservability($provider, $collector, $clock, 'roadrunner', 'worker-1');
         $observability->applicationStarted();
         $observability->workerStarted();
         $observability->requestStarted(new ServerRequest('POST', '/orders'));

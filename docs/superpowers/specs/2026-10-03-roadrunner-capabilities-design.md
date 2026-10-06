@@ -186,7 +186,7 @@ Temporal is intentionally an extension point in this slice. Its worker mode and 
 - Moving RoadRunner configuration into Tusk configuration.
 - Building a gateway, service mesh, service discovery, or control-plane proxy in PHP.
 - Adding Temporal support in the first implementation slice.
-- Making the native adapter a second implementation of RoadRunner capabilities.
+- Making a second transport implementation of RoadRunner capabilities.
 - Requiring a live RoadRunner process for unit or contract tests.
 
 ## Acceptance criteria

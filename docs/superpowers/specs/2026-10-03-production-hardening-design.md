@@ -13,11 +13,11 @@ Tornar o framework seguro e previsível para aplicações PHP de longa duração
 - Tornar `DatabaseQueue::pop()` atômico e recuperar jobs abandonados de acordo com uma política explícita.
 - Adicionar testes de regressão e documentação de limites.
 
-Features ainda incompletas, como Swoole real e cliente cloud HTTP real, não serão simuladas como prontas; serão registradas separadamente.
+Features ainda incompletas, como novos transportes e cliente cloud HTTP real, não serão simuladas como prontas; serão registradas separadamente.
 
 ## Cross-repository contract
 
-O engine envia uma requisição NDJSON com método, URI, headers, cookies, query, body, parsedBody e uploadedFiles. O worker retorna status, headers e body. O framework deve preservar esses campos, rejeitar JSON inválido e nunca enviar detalhes de exceção ao cliente.
+O Engine entrega requests PSR-7 pelo worker RoadRunner. O Framework deve preservar os campos da requisição e nunca enviar detalhes de exceção ao cliente.
 
 ## Design
 
@@ -43,10 +43,10 @@ O claim de job será indivisível para workers concorrentes. Jobs em `processing
 
 - PHPUnit: guards, middleware, kernel, uploads, isolamento de escopo, fila e regressões de compilação.
 - PHPStan no nível configurado.
-- Testes de contrato do formato NDJSON.
+- Testes de contrato do worker RoadRunner.
 - Execução end-to-end será obrigatória quando PHP estiver disponível; até lá, o bloqueio de ambiente será documentado.
 
 ## Non-goals
 
 - Reescrever o container ou trocar PSR-7.
-- Implementar Swoole, proxy HTTP cloud ou um novo protocolo de transporte nesta entrega.
+- Implementar proxy HTTP cloud ou um novo protocolo de transporte nesta entrega.

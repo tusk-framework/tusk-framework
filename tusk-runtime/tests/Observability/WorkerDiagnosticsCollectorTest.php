@@ -61,13 +61,13 @@ final class WorkerDiagnosticsCollectorTest extends TestCase
 
         $collector->applicationStarted();
         $collector->applicationStarted();
-        $collector->workerStarted('worker-1', 'native');
-        $collector->workerStarted('worker-1', 'native');
+        $collector->workerStarted('worker-1', 'roadrunner');
+        $collector->workerStarted('worker-1', 'roadrunner');
         $collector->requestStarted();
         $collector->requestFinished(200, null, 0.1);
         $collector->workerStopped();
         $collector->workerStopped();
-        $collector->workerStarted('worker-2', 'native');
+        $collector->workerStarted('worker-2', 'roadrunner');
 
         $snapshot = $collector->snapshot()->toArray();
 
