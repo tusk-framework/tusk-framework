@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tusk\Contracts\Cloud\Resilience;
 
 use InvalidArgumentException;
+use ReflectionReference;
 
 final readonly class OperationContext
 {
@@ -29,7 +30,9 @@ final readonly class OperationContext
             throw new InvalidArgumentException('Operation name cannot be blank.');
         }
 
-        return new self($operation, $deadline, $retryAllowed, $metadata);
+        $activeReferences = [];
+
+        return new self($operation, $deadline, $retryAllowed, self::snapshotArray($metadata, $activeReferences));
     }
 
     public function operation(): string
@@ -53,5 +56,46 @@ final readonly class OperationContext
     public function metadata(): array
     {
         return $this->metadata;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $values
+     * @param  array<string, true>  $activeReferences
+     * @return array<array-key, mixed>
+     */
+    private static function snapshotArray(array $values, array &$activeReferences): array
+    {
+        $snapshot = [];
+
+        foreach ($values as $key => $value) {
+            $reference = ReflectionReference::fromArrayElement($values, $key);
+            $referenceId = $reference?->getId();
+
+            if ($referenceId !== null && isset($activeReferences[$referenceId])) {
+                throw new InvalidArgumentException('Metadata cannot contain recursive references.');
+            }
+
+            if (is_array($value)) {
+                if ($referenceId !== null) {
+                    $activeReferences[$referenceId] = true;
+                }
+
+                $snapshot[$key] = self::snapshotArray($value, $activeReferences);
+
+                if ($referenceId !== null) {
+                    unset($activeReferences[$referenceId]);
+                }
+
+                continue;
+            }
+
+            if (! is_scalar($value) && $value !== null) {
+                throw new InvalidArgumentException('Metadata may contain only scalars, null, and arrays.');
+            }
+
+            $snapshot[$key] = $value;
+        }
+
+        return $snapshot;
     }
 }

@@ -101,6 +101,57 @@ final class ContractAndClockTest extends TestCase
         OperationContext::create(" \t\n ");
     }
 
+    public function test_context_detaches_external_scalar_references(): void
+    {
+        $value = 'original';
+        $context = OperationContext::create('read', metadata: ['request' => &$value]);
+        $value = 'changed outside';
+
+        self::assertSame(['request' => 'original'], $context->metadata());
+    }
+
+    public function test_context_detaches_nested_references_on_input_and_output(): void
+    {
+        $value = 'original';
+        $metadata = ['nested' => ['request' => &$value]];
+        $context = OperationContext::create('read', metadata: $metadata);
+
+        $value = 'changed outside';
+        $metadata['nested']['request'] = 'changed through input';
+        $received = $context->metadata();
+        $received['nested']['request'] = 'changed through accessor';
+
+        self::assertSame(['nested' => ['request' => 'original']], $context->metadata());
+    }
+
+    public function test_context_rejects_nested_mutable_objects(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        OperationContext::create('read', metadata: ['nested' => ['object' => (object) ['state' => 'mutable']]]);
+    }
+
+    public function test_context_rejects_nested_resources(): void
+    {
+        $resource = fopen('php://memory', 'r+');
+        self::assertIsResource($resource);
+
+        try {
+            $this->expectException(InvalidArgumentException::class);
+            OperationContext::create('read', metadata: ['nested' => ['resource' => $resource]]);
+        } finally {
+            fclose($resource);
+        }
+    }
+
+    public function test_context_rejects_recursive_metadata(): void
+    {
+        $recursive = [];
+        $recursive['self'] = &$recursive;
+
+        $this->expectException(InvalidArgumentException::class);
+        OperationContext::create('read', metadata: ['recursive' => $recursive]);
+    }
+
     public function test_default_classifier_makes_failures_terminal(): void
     {
         $failure = new RuntimeException('failed');
@@ -131,5 +182,21 @@ final class ContractAndClockTest extends TestCase
         self::assertInstanceOf(ClockInterface::class, $clock);
         self::assertGreaterThanOrEqual(0, $first);
         self::assertGreaterThanOrEqual($first, $second);
+    }
+
+    public function test_system_clock_converts_integer_and_float_nanoseconds_from_its_origin(): void
+    {
+        foreach ([1_000_000_000, 4_000_000_000.0] as $origin) {
+            $nanoseconds = $origin;
+            $clock = new SystemClock(static function () use (&$nanoseconds): int|float {
+                return $nanoseconds;
+            });
+
+            self::assertSame(0, $clock->nowMilliseconds());
+            $nanoseconds += 2_500_000;
+            self::assertSame(2, $clock->nowMilliseconds());
+            $nanoseconds += 500_000;
+            self::assertSame(3, $clock->nowMilliseconds());
+        }
     }
 }
