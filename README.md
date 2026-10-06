@@ -54,6 +54,12 @@ Tusk keeps application code on stable contracts while RoadRunner remains respons
 
 The Go `tusk-engine` is the control plane above RoadRunner. It owns configuration validation, process lifecycle, health, logs, metrics, and graceful stop; it does not duplicate RoadRunner's pools or IPC. The PHP runtime owns application contracts, dependency injection, and lifecycle hooks.
 
+| Concern | Owner |
+| --- | --- |
+| `bootstrap/app.php`, application configuration, handlers, and lifecycle hooks | Tusk Framework application |
+| `.tusk/runtime/worker.php`, startup validation, process supervision, and control-plane diagnostics | Tusk Engine |
+| HTTP transport, Goridge IPC, worker pools, recycling, and process-level shutdown | RoadRunner |
+
 An application can select modules from its bootstrap:
 
 ```php
@@ -65,7 +71,7 @@ return [
 ];
 ```
 
-RoadRunner drivers, endpoints, pool limits, TLS, and logger output stay in `.rr.yaml`; `RR_RPC` is provided by the RoadRunner worker. The native adapter remains an explicit compatibility backend and does not emulate these capabilities.
+RoadRunner drivers, endpoints, pool limits, TLS, and logger output stay in `.rr.yaml`; `RR_RPC` is provided by the RoadRunner worker. RoadRunner is the sole Framework runtime boundary; the Engine owns the generated worker and process lifecycle.
 
 ### Observability and worker diagnostics
 
@@ -89,7 +95,7 @@ The snapshot intentionally excludes headers, cookies, bodies, uploads, secrets, 
 
 ## Getting Started
 
-Since Tusk is designed for persistent runtimes, its supported entry point is a **RoadRunner worker loop**. The framework keeps request-scoped state isolated; the legacy native loop is retained only as a migration boundary.
+Since Tusk is designed for persistent runtimes, its supported entry point is a **RoadRunner worker loop**. Applications provide `bootstrap/app.php`; the Engine generates `.tusk/runtime/worker.php`, and the Framework keeps request-scoped state isolated for each request.
 
 ### 1. Installation
 ```bash
@@ -145,10 +151,9 @@ RoadRunner control plane. Engine-owned runtime state belongs in `.tusk/` and
 is excluded by the generated project's `.gitignore`; the generator does not
 modify an existing project directory.
 
-For the coordinated skeleton smoke test, publish the Framework branch
-`feature/tusk-bootstrap` before publishing the Engine change. The Engine CI
-fetches that branch and verifies its exact pinned commit SHA, so an unpublished
-local Framework object cannot become a silent legacy fallback.
+The coordinated skeleton smoke test consumes a published Framework commit
+selected by the Engine integration workflow. It verifies the exact Framework
+contract and does not provide a legacy runtime fallback.
 
 Tusk Framework is open-source software licensed under the [MIT License](LICENSE).
 

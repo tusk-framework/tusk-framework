@@ -7,7 +7,6 @@ namespace Tusk\Runtime;
 use InvalidArgumentException;
 use Tusk\Config\Env;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
-use Tusk\Runtime\Adapters\NativeLoopAdapter;
 use Tusk\Runtime\Adapters\RoadRunnerAdapter;
 
 final class RuntimeAdapterFactory
@@ -19,9 +18,8 @@ final class RuntimeAdapterFactory
 
         return match ($runtime) {
             'roadrunner', 'rr' => new RoadRunnerAdapter(),
-            'native' => new NativeLoopAdapter(),
             default => throw new InvalidArgumentException(sprintf(
-                'Unsupported Tusk runtime "%s". Supported runtimes: roadrunner, native.',
+                'Unsupported Tusk runtime "%s". Supported runtimes: roadrunner.',
                 $runtime
             )),
         };

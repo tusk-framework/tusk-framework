@@ -19,7 +19,7 @@
 - Capabilities are explicitly registered; undeclared capabilities resolve to a dedicated unavailable-capability error.
 - Request scope remains exclusively controlled by `LifecycleManager`; adapters must not reset it themselves.
 - No default unit or contract test may require a live RoadRunner daemon.
-- The native adapter remains a compatibility path and does not implement RoadRunner capabilities.
+- RoadRunner is the only supported runtime path and owns the worker transport.
 - RoadRunner configuration remains the source of truth for plugin drivers, endpoints, pools, and logger output.
 - Temporal is an extension point only; it is not implemented in this plan.
 

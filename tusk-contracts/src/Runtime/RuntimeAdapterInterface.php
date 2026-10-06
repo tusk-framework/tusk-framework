@@ -20,7 +20,7 @@ interface RuntimeAdapterInterface
     public function stop(): void;
 
     /**
-     * Returns the name of the runtime engine (e.g., 'native', 'roadrunner', 'swoole').
+     * Returns the name of the RoadRunner runtime.
      */
     public function getName(): string;
 }

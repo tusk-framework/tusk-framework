@@ -45,8 +45,11 @@ final class RuntimeConfiguration
         $adapter = strtolower(trim((string) ($runtime['adapter'] ?? 'roadrunner')));
         $adapter = $adapter === 'rr' ? 'roadrunner' : $adapter;
 
-        if (! in_array($adapter, ['roadrunner', 'native'], true)) {
-            throw new InvalidArgumentException(sprintf('Unsupported runtime adapter "%s".', $adapter));
+        if ($adapter !== 'roadrunner') {
+            throw new InvalidArgumentException(sprintf(
+                'Unsupported runtime adapter "%s". Supported adapters: roadrunner.',
+                $adapter,
+            ));
         }
 
         $modules = $runtime['modules'] ?? ['http'];
@@ -70,17 +73,6 @@ final class RuntimeConfiguration
 
             if (! in_array($module, $normalized, true)) {
                 $normalized[] = $module;
-            }
-        }
-
-        if ($adapter === 'native') {
-            foreach ($normalized as $module) {
-                if ($module !== 'http') {
-                    throw new InvalidArgumentException(sprintf(
-                        'Runtime module "%s" requires the RoadRunner adapter.',
-                        $module,
-                    ));
-                }
             }
         }
 

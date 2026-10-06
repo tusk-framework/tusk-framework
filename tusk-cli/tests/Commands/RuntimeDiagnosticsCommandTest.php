@@ -69,7 +69,7 @@ final class FixedDiagnostics implements WorkerDiagnosticsInterface
     {
         return new WorkerDiagnosticsSnapshot(
             workerId: 'standalone',
-            runtime: 'native',
+            runtime: 'roadrunner',
             lifecycleState: 'standalone',
             startedAt: new DateTimeImmutable('2026-10-03T12:00:00+00:00'),
             uptimeSeconds: 2.5,

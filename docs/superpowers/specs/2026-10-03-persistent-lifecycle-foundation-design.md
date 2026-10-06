@@ -6,7 +6,7 @@ Status: Proposed design
 
 Make the persistent PHP lifecycle explicit and runtime-independent. The
 framework must give application services the same reliable boundaries whether
-the Engine runs RoadRunner or the native adapter, while keeping transport
+the Engine runs the RoadRunner worker, while keeping transport
 concerns outside the container and domain code.
 
 The first delivery is intentionally limited to the lifecycle foundation. It
@@ -105,8 +105,8 @@ the existing attributes.
 `RuntimeAdapterInterface` continues to own transport and blocking behavior.
 The kernel wraps the request handler with lifecycle entry/exit behavior before
 passing it to the adapter. Adapters remain responsible for transport-specific
-resource cleanup, such as releasing a RoadRunner request or closing an NDJSON
-frame, but they do not own application container lifecycle.
+resource cleanup, such as releasing a RoadRunner request, but they do not own
+application container lifecycle.
 
 The resulting flow is:
 
@@ -122,8 +122,8 @@ Kernel
   application.stop
 ```
 
-This keeps the RoadRunner adapter thin and lets the native adapter exercise the
-same PHP lifecycle contract.
+This keeps the RoadRunner adapter thin while preserving the same PHP lifecycle
+contract for application services.
 
 ## Error handling
 
@@ -139,7 +139,7 @@ same PHP lifecycle contract.
 
 ## Testing strategy
 
-Tests must prove behavior without RoadRunner or Swoole processes:
+Tests must prove behavior without starting external worker processes:
 
 - event ordering for a normal application/worker/request lifecycle;
 - idempotent start and stop transitions;
@@ -147,7 +147,7 @@ Tests must prove behavior without RoadRunner or Swoole processes:
 - worker cleanup on adapter termination;
 - reverse teardown ordering;
 - hook failure reporting without skipping later cleanup;
-- parity between the native and RoadRunner adapter test doubles;
+- lifecycle behavior at the RoadRunner adapter boundary;
 - no duplicate request reset when an adapter exits unexpectedly;
 - compiled hook metadata produces the same order as runtime discovery.
 
@@ -178,7 +178,7 @@ Each delivery must remain usable and testable without requiring the next one.
 
 The first delivery is complete when:
 
-1. RoadRunner and native adapters execute the same lifecycle event sequence;
+1. The RoadRunner adapter executes the shared lifecycle event sequence;
 2. request-scoped services are reset by one shared lifecycle path;
 3. worker and application teardown execute on graceful and exceptional exits;
 4. existing `OnStart`/`OnShutdown` applications remain compatible;

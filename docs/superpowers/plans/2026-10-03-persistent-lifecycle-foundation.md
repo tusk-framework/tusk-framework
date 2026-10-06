@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Centralize application, worker, and request lifecycle behavior so RoadRunner and native adapters execute the same persistent PHP lifecycle with exactly-once request cleanup.
+**Goal:** Centralize application, worker, and request lifecycle behavior so the RoadRunner worker executes the persistent PHP lifecycle with exactly-once request cleanup.
 
 **Architecture:** Add a transport-neutral lifecycle contract and manager around the existing container. The Kernel owns application/worker transitions and wraps the request handler; adapters remain responsible only for transport and no longer reset container scopes. The container compiler emits lifecycle hook metadata/calls so the request path does not use reflection when a compiled container is present.
 
@@ -16,9 +16,9 @@
 - Existing `OnStart` and `OnShutdown` applications remain compatible.
 - Request-scoped services reset exactly once after every dispatch, including failures.
 - Runtime adapters must not independently reset application container scopes.
-- RoadRunner remains the supported runtime; native remains a compatibility adapter.
+- RoadRunner is the supported runtime and owns the worker transport.
 - No new ORM, worker pool, gateway, service mesh, or Spiral Framework dependency is introduced.
-- Lifecycle behavior must be testable without starting RoadRunner or Swoole.
+- Lifecycle behavior must be testable without starting an external worker process.
 
 ## Review Focus
 
@@ -163,7 +163,7 @@
 **Files:**
 - Modify: `tusk-runtime/src/Kernel.php`
 - Modify: `tusk-runtime/src/Adapters/RoadRunnerAdapter.php`
-- Modify: `tusk-runtime/src/Adapters/NativeLoopAdapter.php`
+- Keep the runtime adapter boundary limited to RoadRunner.
 - Create: `tusk-runtime/tests/KernelTest.php`
 - Modify: `tusk-runtime/tests/Adapters/RoadRunnerAdapterTest.php`
 - Create: `tusk-runtime/tests/AdapterLifecycleParityTest.php`
@@ -176,7 +176,7 @@
 
 - [ ] **Step 1: Write failing Kernel and parity tests**
 
-  Use a fake adapter and fake container/lifecycle recorder. Assert that RoadRunner and native adapter paths receive the same wrapped request lifecycle and that no adapter calls `resetScope()` directly.
+  Use a fake adapter and fake container/lifecycle recorder. Assert that the RoadRunner path receives the wrapped request lifecycle and that no adapter calls `resetScope()` directly.
 
 - [ ] **Step 2: Run focused tests to verify failure**
 
@@ -186,7 +186,7 @@
 
 - [ ] **Step 3: Integrate the manager and simplify adapters**
 
-  Make Kernel own lifecycle transitions. Keep native request-frame cleanup in the native adapter and RoadRunner response/error handling in its adapter; move application scope reset to the shared manager.
+  Make Kernel own lifecycle transitions. Keep RoadRunner response/error handling in its adapter and move application scope reset to the shared manager.
 
 - [ ] **Step 4: Run focused runtime tests**
 

@@ -69,6 +69,7 @@ class ProjectGeneratorTest extends TestCase
             $contents = file_get_contents($root.'/'.$file);
             self::assertStringNotContainsString('NativeLoopAdapter', $contents);
             self::assertStringNotContainsString('NDJSON', $contents);
+            self::assertStringNotContainsString('SwooleAdapter', $contents);
             self::assertStringNotContainsString('runWorker(', $contents);
         }
     }

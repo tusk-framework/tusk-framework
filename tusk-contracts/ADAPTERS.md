@@ -5,24 +5,22 @@ Adapters are implementation details. The application domain depends on **Interfa
 
 ## Key Rules
 1. **No Infrastructure in Domain**: No PDO, No Guzzle, No AMQP in `src/Domain`.
-2. **Interface Driven**: Domain defines the contract; Adapter implements it.
-3. **Config-Driven Selection**: If multiple adapters exist for an interface (e.g., `MemoryRepository` vs `SqlRepository`), the selection is made via configuration, not code change.
+2. **Interface Driven**: Domain defines the contract; the runtime implements the contract.
+3. **RoadRunner Boundary**: Application traffic enters through the Engine-managed RoadRunner worker. The Framework does not provide a second HTTP server, worker pool, or transport protocol.
 
 ## Structure
-Each module (e.g., `tusk-web`, `tusk-data`) will have a standard structure:
+Runtime HTTP integration has one supported implementation:
 
 ```text
-tusk-web/
-├─ src/
-│  ├─ Http/           (The abstraction)
-│  ├─ Adapters/       (The implementations)
-│  │  ├─ RoadRunner/
-│  │  ├─ Swoole/
-│  │  └─ Native/
+tusk-runtime/
+└─ src/
+   ├─ Adapters/RoadRunnerAdapter.php
+   └─ Modules/RoadRunnerHttpModule.php
 ```
 
 ## Declaration
-Adapters are declared as services but can be tagged for discovery.
+The runtime adapter is constructed at the application boundary and remains
+behind `RuntimeAdapterInterface`.
 
 ```php
 #[Service]
