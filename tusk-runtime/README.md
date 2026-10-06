@@ -21,7 +21,7 @@ Copy `.rr.yaml.example` to `.rr.yaml`, adjust the worker command and limits, the
 
 ```bash
 cp .rr.yaml.example .rr.yaml
-rr serve -c .rr.yaml
+tusk start
 ```
 
 RoadRunner owns the worker transport and process channel. The Tusk Runtime does not implement a second application transport; application output must not corrupt the RoadRunner channel. Tusk's lifecycle manager starts and ends each request, including request-scope cleanup.

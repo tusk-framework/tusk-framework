@@ -22,7 +22,7 @@ Make RoadRunner the sole runtime for Tusk applications and align the Framework w
 
 ## Acceptance criteria
 
-- `RuntimeAdapterFactory::create()` returns RoadRunner by default and native only when explicitly selected.
+- `RuntimeAdapterFactory::create()` returns RoadRunner by default, and RoadRunner is the only supported runtime.
 - `tusk run app.php` does not emit human-readable stdout before the RR protocol starts.
 - `RoadRunnerAdapter::stop()` requests a real worker stop and does not leave the loop marked running.
 - The example configuration uses RoadRunner v3 syntax and bounded worker lifecycle settings.
