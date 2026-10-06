@@ -6,8 +6,9 @@ use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Tusk\Config\Repository;
-use Tusk\Core\Container\Container;
+use Tusk\Contracts\Observability\TelemetryProviderInterface;
 use Tusk\Foundation\Application;
+use Tusk\Runtime\Observability\RuntimeObservability;
 use Tusk\Web\HttpKernel;
 use Tusk\Web\Router\Router;
 
@@ -25,7 +26,7 @@ class ApplicationBuilderTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['config/app.php', 'config/ignored.txt', 'routes/web.php', 'bootstrap/providers.php'] as $file) {
+        foreach (['config/app.php', 'config/runtime.php', 'config/ignored.txt', 'routes/web.php', 'bootstrap/providers.php'] as $file) {
             if (is_file($this->basePath.'/'.$file)) {
                 unlink($this->basePath.'/'.$file);
             }
@@ -62,6 +63,23 @@ class ApplicationBuilderTest extends TestCase
         self::assertNull($config->get('app.nested.none', 'fallback'));
         self::assertSame('fallback', $config->get('app.missing', 'fallback'));
         self::assertSame(['app' => ['name' => 'Tusk', 'nested' => ['enabled' => false, 'none' => null]]], $config->all());
+    }
+
+    public function test_registers_configured_runtime_modules_before_the_application_is_used(): void
+    {
+        file_put_contents($this->basePath.'/config/runtime.php', <<<'PHP'
+<?php
+
+return [
+    'runtime' => ['modules' => ['http']],
+    'observability' => ['enabled' => false],
+];
+PHP);
+
+        $application = Application::configure($this->basePath)->create();
+
+        self::assertTrue($application->container()->has(RuntimeObservability::class));
+        self::assertTrue($application->container()->has(TelemetryProviderInterface::class));
     }
 
     public function test_routes_and_providers_produce_psr7_response(): void

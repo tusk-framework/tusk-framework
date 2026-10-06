@@ -13,10 +13,13 @@ use Spiral\RoadRunner\WorkerInterface;
 use Tusk\Contracts\Attributes\OnShutdown;
 use Tusk\Contracts\Attributes\OnStart;
 use Tusk\Contracts\Attributes\Service;
+use Tusk\Contracts\Container\ContainerInterface;
+use Tusk\Contracts\Runtime\Modules\RuntimeModuleInterface;
 use Tusk\Core\Container\Container;
 use Tusk\Foundation\Application;
 use Tusk\Runtime\Adapters\RoadRunnerAdapter;
 use Tusk\Runtime\Kernel;
+use Tusk\Runtime\Modules\RuntimeModuleRegistry;
 use Tusk\Web\HttpKernel;
 use Tusk\Web\Router\Router;
 
@@ -25,8 +28,8 @@ class RoadRunnerApplicationTest extends TestCase
     public function test_application_uses_roadrunner_and_handles_repeated_requests_through_application(): void
     {
         $channel = $this->channel([new ServerRequest('GET', '/one'), new ServerRequest('GET', '/two')]);
-        $container = new Container();
-        $application = new RecordingApplication(__DIR__, $container, new HttpKernel($container, new Router()), new RoadRunnerAdapter($channel));
+        $container = new Container;
+        $application = new RecordingApplication(__DIR__, $container, new HttpKernel($container, new Router), new RoadRunnerAdapter($channel));
 
         $application->runWorker();
 
@@ -40,9 +43,9 @@ class RoadRunnerApplicationTest extends TestCase
     public function test_request_scope_is_reset_after_success_and_handler_exception(): void
     {
         $channel = $this->channel([new ServerRequest('GET', '/ok'), new ServerRequest('GET', '/fail'), new ServerRequest('GET', '/again')]);
-        $container = new Container();
+        $container = new Container;
         $container->register(RequestState::class);
-        $application = new RecordingApplication(__DIR__, $container, new HttpKernel($container, new Router()), new RoadRunnerAdapter($channel));
+        $application = new RecordingApplication(__DIR__, $container, new HttpKernel($container, new Router), new RoadRunnerAdapter($channel));
         $application->failPath = '/fail';
 
         $application->runWorker();
@@ -58,10 +61,10 @@ class RoadRunnerApplicationTest extends TestCase
     public function test_shutdown_hooks_run_once_after_channel_termination_and_repeated_shutdown(): void
     {
         $channel = $this->channel([new ServerRequest('GET', '/ok')]);
-        $container = new Container();
-        $hooks = new LifecycleHooks();
+        $container = new Container;
+        $hooks = new LifecycleHooks;
         $container->instance(LifecycleHooks::class, $hooks);
-        $application = new RecordingApplication(__DIR__, $container, new HttpKernel($container, new Router()), new RoadRunnerAdapter($channel));
+        $application = new RecordingApplication(__DIR__, $container, new HttpKernel($container, new Router), new RoadRunnerAdapter($channel));
 
         $application->runWorker();
         $application->shutdown();
@@ -71,13 +74,33 @@ class RoadRunnerApplicationTest extends TestCase
         self::assertSame(1, $hooks->shutdowns);
     }
 
+    public function test_application_registers_and_runs_configured_runtime_modules(): void
+    {
+        $channel = $this->channel([]);
+        $container = new Container;
+        $module = new RecordingRuntimeModule;
+        $application = new RecordingApplication(
+            __DIR__,
+            $container,
+            new HttpKernel($container, new Router),
+            new RoadRunnerAdapter($channel),
+            new RuntimeModuleRegistry([$module]),
+        );
+
+        $application->runWorker();
+
+        self::assertSame(1, $module->registered);
+        self::assertSame(1, $module->started);
+        self::assertSame(1, $module->stopped);
+    }
+
     public function test_shutdown_hooks_run_once_when_channel_fails(): void
     {
         $channel = $this->channel([new RuntimeException('channel closed')]);
-        $container = new Container();
-        $hooks = new LifecycleHooks();
+        $container = new Container;
+        $hooks = new LifecycleHooks;
         $container->instance(LifecycleHooks::class, $hooks);
-        $application = new RecordingApplication(__DIR__, $container, new HttpKernel($container, new Router()), new RoadRunnerAdapter($channel));
+        $application = new RecordingApplication(__DIR__, $container, new HttpKernel($container, new Router), new RoadRunnerAdapter($channel));
 
         $application->runWorker();
 
@@ -88,10 +111,10 @@ class RoadRunnerApplicationTest extends TestCase
     public function test_shutdown_during_request_stops_accepting_requests(): void
     {
         $channel = $this->channel([new ServerRequest('GET', '/first'), new ServerRequest('GET', '/second')]);
-        $container = new Container();
-        $hooks = new LifecycleHooks();
+        $container = new Container;
+        $hooks = new LifecycleHooks;
         $container->instance(LifecycleHooks::class, $hooks);
-        $application = new ShutdownDuringRequestApplication(__DIR__, $container, new HttpKernel($container, new Router()), new RoadRunnerAdapter($channel));
+        $application = new ShutdownDuringRequestApplication(__DIR__, $container, new HttpKernel($container, new Router), new RoadRunnerAdapter($channel));
 
         $application->runWorker();
 
@@ -104,11 +127,11 @@ class RoadRunnerApplicationTest extends TestCase
     public function test_shutdown_hook_runs_once_for_service_registered_under_class_and_interface(): void
     {
         $channel = $this->channel([]);
-        $container = new Container();
-        $hooks = new LifecycleHooks();
+        $container = new Container;
+        $hooks = new LifecycleHooks;
         $container->instance(LifecycleHooks::class, $hooks);
         $container->instance(LifecycleHookContract::class, $hooks);
-        $application = new RecordingApplication(__DIR__, $container, new HttpKernel($container, new Router()), new RoadRunnerAdapter($channel));
+        $application = new RecordingApplication(__DIR__, $container, new HttpKernel($container, new Router), new RoadRunnerAdapter($channel));
 
         $application->runWorker();
 
@@ -119,7 +142,7 @@ class RoadRunnerApplicationTest extends TestCase
     public function test_legacy_start_hook_can_register_http_kernel_before_it_is_resolved(): void
     {
         $channel = $this->channel([]);
-        $container = new Container();
+        $container = new Container;
         $hooks = new HttpKernelRegistrationHook($container);
         $container->instance(HttpKernelRegistrationHook::class, $hooks);
 
@@ -132,9 +155,9 @@ class RoadRunnerApplicationTest extends TestCase
     public function test_legacy_kernel_start_accepts_an_explicit_adapter(): void
     {
         $channel = $this->channel([]);
-        $container = new Container();
-        $container->instance(HttpKernel::class, new HttpKernel($container, new Router()));
-        $hooks = new LifecycleHooks();
+        $container = new Container;
+        $container->instance(HttpKernel::class, new HttpKernel($container, new Router));
+        $hooks = new LifecycleHooks;
         $container->instance(LifecycleHooks::class, $hooks);
 
         (new Kernel($container, new RoadRunnerAdapter($channel)))->start();
@@ -202,6 +225,7 @@ interface LifecycleHookContract {}
 class LifecycleHooks implements LifecycleHookContract
 {
     public int $starts = 0;
+
     public int $shutdowns = 0;
 
     #[OnStart]
@@ -227,7 +251,36 @@ class HttpKernelRegistrationHook
     public function registerKernel(): void
     {
         $this->starts++;
-        $this->container->instance(HttpKernel::class, new HttpKernel($this->container, new Router()));
+        $this->container->instance(HttpKernel::class, new HttpKernel($this->container, new Router));
+    }
+}
+
+final class RecordingRuntimeModule implements RuntimeModuleInterface
+{
+    public int $registered = 0;
+
+    public int $started = 0;
+
+    public int $stopped = 0;
+
+    public function name(): string
+    {
+        return 'test.runtime';
+    }
+
+    public function register(ContainerInterface $container): void
+    {
+        $this->registered++;
+    }
+
+    public function start(): void
+    {
+        $this->started++;
+    }
+
+    public function stop(): void
+    {
+        $this->stopped++;
     }
 }
 

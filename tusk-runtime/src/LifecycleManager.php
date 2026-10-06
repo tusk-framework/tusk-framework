@@ -9,6 +9,7 @@ use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Runtime\LifecycleEvent;
 use Tusk\Contracts\Runtime\LifecycleManagerInterface;
 use Tusk\Runtime\Observability\LifecycleObserverInterface;
+use Tusk\Runtime\Observability\RequestScopeObserverInterface;
 
 final class LifecycleManager implements LifecycleManagerInterface
 {
@@ -89,6 +90,10 @@ final class LifecycleManager implements LifecycleManagerInterface
             $this->container->resetScope('request');
         } catch (Throwable $exception) {
             $failure ??= $exception;
+        }
+
+        if ($this->observer instanceof RequestScopeObserverInterface) {
+            $this->notifyObserver(fn () => $this->observer->requestScopeReset($failure !== null));
         }
 
         $this->notifyObserver(fn () => $this->observer?->requestFinished($response, $handlerException));

@@ -8,6 +8,9 @@ use RuntimeException;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Runtime\LifecycleManager;
 use Tusk\Runtime\Observability\LifecycleObserverInterface;
+use Tusk\Runtime\Observability\NoopTelemetryProvider;
+use Tusk\Runtime\Observability\RuntimeObservability;
+use Tusk\Runtime\Observability\WorkerDiagnosticsCollector;
 
 final class LifecycleManagerContainer implements ContainerInterface
 {
@@ -21,6 +24,8 @@ final class LifecycleManagerContainer implements ContainerInterface
 
     /** @var list<string> */
     public array $resetScopes = [];
+
+    public ?\Throwable $resetFailure = null;
 
     public function get(string $id): object
     {
@@ -46,6 +51,10 @@ final class LifecycleManagerContainer implements ContainerInterface
     public function resetScope(string $scope): void
     {
         $this->resetScopes[] = $scope;
+
+        if ($this->resetFailure !== null) {
+            throw $this->resetFailure;
+        }
     }
 }
 
@@ -150,6 +159,21 @@ final class LifecycleManagerTest extends TestCase
         self::assertSame(['request'], $container->resetScopes);
     }
 
+    public function test_request_scope_reset_is_recorded_by_runtime_observability(): void
+    {
+        $container = new LifecycleManagerContainer;
+        $collector = new WorkerDiagnosticsCollector;
+        $observer = new RuntimeObservability(new NoopTelemetryProvider, $collector);
+        $manager = new LifecycleManager($container, null, $observer);
+
+        $manager->applicationStart();
+        $manager->workerStart();
+        $manager->wrap(static fn (): string => 'ok')();
+
+        self::assertSame(1, $collector->snapshot()->requestScopeResets);
+        self::assertSame(0, $collector->snapshot()->cleanupAnomalies);
+    }
+
     public function test_request_cleanup_failure_is_reported_when_handler_succeeds(): void
     {
         $container = new LifecycleManagerContainer;
@@ -167,6 +191,28 @@ final class LifecycleManagerTest extends TestCase
         }
 
         self::assertSame(['request'], $container->resetScopes);
+    }
+
+    public function test_request_scope_reset_failure_is_recorded_as_a_diagnostic_anomaly(): void
+    {
+        $container = new LifecycleManagerContainer;
+        $container->resetFailure = new RuntimeException('scope reset failed');
+        $collector = new WorkerDiagnosticsCollector;
+        $observer = new RuntimeObservability(new NoopTelemetryProvider, $collector);
+        $manager = new LifecycleManager($container, null, $observer);
+
+        $manager->applicationStart();
+        $manager->workerStart();
+
+        try {
+            $manager->wrap(static fn (): string => 'ok')();
+            self::fail('The request scope reset should fail.');
+        } catch (RuntimeException $exception) {
+            self::assertSame($container->resetFailure, $exception);
+        }
+
+        self::assertSame(1, $collector->snapshot()->requestScopeResets);
+        self::assertSame(1, $collector->snapshot()->cleanupAnomalies);
     }
 
     public function test_stop_failure_does_not_leave_manager_in_started_state(): void
