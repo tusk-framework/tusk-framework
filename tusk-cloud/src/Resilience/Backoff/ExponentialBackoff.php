@@ -32,7 +32,7 @@ final readonly class ExponentialBackoff implements BackoffStrategyInterface
         }
 
         for ($number = 1; $number < $retryNumber && $delay < $this->maxDelayMilliseconds; $number++) {
-            $delay = $delay >= intdiv($this->maxDelayMilliseconds, 2)
+            $delay = $delay > intdiv($this->maxDelayMilliseconds, 2)
                 ? $this->maxDelayMilliseconds
                 : $delay * 2;
         }

@@ -34,6 +34,25 @@ final class BackoffStrategyTest extends TestCase
         self::assertSame(0, ExponentialBackoff::create(baseDelayMilliseconds: 0)->delayMilliseconds(100, 0));
     }
 
+    public function test_exponential_delay_below_small_odd_cap_is_not_saturated_early(): void
+    {
+        $strategy = ExponentialBackoff::create(baseDelayMilliseconds: 250, maxDelayMilliseconds: 501);
+
+        self::assertSame(500, $strategy->delayMilliseconds(2, 0));
+        self::assertSame(501, $strategy->delayMilliseconds(3, 0));
+    }
+
+    public function test_exponential_delay_below_php_int_max_odd_cap_does_not_overflow(): void
+    {
+        $strategy = ExponentialBackoff::create(
+            baseDelayMilliseconds: intdiv(PHP_INT_MAX, 2),
+            maxDelayMilliseconds: PHP_INT_MAX,
+        );
+
+        self::assertSame(PHP_INT_MAX - 1, $strategy->delayMilliseconds(2, 0));
+        self::assertSame(PHP_INT_MAX, $strategy->delayMilliseconds(3, 0));
+    }
+
     public function test_decorrelated_jitter_uses_injected_values_previous_delay_and_cap(): void
     {
         $random = new FakeRandomSource([175, 500]);
