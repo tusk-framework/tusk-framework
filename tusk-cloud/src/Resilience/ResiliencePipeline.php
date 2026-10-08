@@ -6,6 +6,15 @@ namespace Tusk\Cloud\Resilience;
 
 use Closure;
 use Throwable;
+use Tusk\Cloud\Resilience\Event\FallbackApplied;
+use Tusk\Cloud\Resilience\Event\OperationRejected;
+use Tusk\Cloud\Resilience\Event\OperationRejectionReason;
+use Tusk\Cloud\Resilience\Exception\BulkheadRejectedException;
+use Tusk\Cloud\Resilience\Exception\BulkheadTimeoutException;
+use Tusk\Cloud\Resilience\Exception\CircuitOpenException;
+use Tusk\Cloud\Resilience\Exception\OperationCancelledException;
+use Tusk\Cloud\Resilience\Exception\RateLimitRejectedException;
+use Tusk\Cloud\Resilience\Exception\ResilienceDeadlineExceededException;
 use Tusk\Cloud\Resilience\Exception\ResilienceFallbackException;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
 
@@ -28,6 +37,8 @@ final readonly class ResiliencePipeline
     public function run(callable $operation, ?OperationContext $context = null): mixed
     {
         $context ??= OperationContext::create($this->name);
+        $startedAt = $this->instrumentation?->beginOperation();
+        $outcome = 'success';
 
         try {
             $retryPolicy = $this->retryPolicy ?? RetryPolicy::create();
@@ -55,15 +66,36 @@ final readonly class ResiliencePipeline
 
             return $protected($context);
         } catch (Throwable $failure) {
+            $outcome = 'failure';
+            $reason = match (true) {
+                $failure instanceof CircuitOpenException => OperationRejectionReason::CIRCUIT_OPEN,
+                $failure instanceof BulkheadRejectedException => OperationRejectionReason::BULKHEAD_REJECTED,
+                $failure instanceof BulkheadTimeoutException => OperationRejectionReason::BULKHEAD_TIMEOUT,
+                $failure instanceof RateLimitRejectedException => OperationRejectionReason::RATE_LIMIT_REJECTED,
+                $failure instanceof ResilienceDeadlineExceededException => OperationRejectionReason::DEADLINE_EXCEEDED,
+                $failure instanceof OperationCancelledException => OperationRejectionReason::CANCELLED,
+                default => null,
+            };
+            if ($reason !== null) {
+                $this->instrumentation?->operationRejected(new OperationRejected($context->operation(), $reason));
+            }
+
             if ($this->fallback === null) {
                 throw $failure;
             }
 
+            $this->instrumentation?->fallbackApplied(new FallbackApplied($context->operation(), $failure::class));
             try {
-                return ($this->fallback)($failure, $context);
+                $result = ($this->fallback)($failure, $context);
+                $outcome = 'fallback_success';
+
+                return $result;
             } catch (Throwable $fallbackFailure) {
+                $outcome = 'fallback_failure';
                 throw new ResilienceFallbackException($context->operation(), $failure, $fallbackFailure);
             }
+        } finally {
+            $this->instrumentation?->finishOperation($startedAt, $outcome);
         }
     }
 }
