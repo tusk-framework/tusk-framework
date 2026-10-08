@@ -6,6 +6,7 @@ namespace Tusk\Cloud\Resilience;
 
 use InvalidArgumentException;
 use Throwable;
+use Tusk\Cloud\Resilience\Event\CircuitStateChanged;
 use Tusk\Cloud\Resilience\Exception\CircuitOpenException;
 use Tusk\Contracts\Cloud\Resilience\ClockInterface;
 use Tusk\Contracts\Cloud\Resilience\FailureClassifierInterface;
@@ -26,6 +27,7 @@ final class CircuitBreaker implements CircuitBreakerInterface
         private readonly StateStoreInterface $store,
         private readonly ClockInterface $clock,
         string $name,
+        private readonly ?ResilienceInstrumentation $instrumentation = null,
     ) {
         $name = trim($name);
         if ($name === '') {
@@ -43,6 +45,7 @@ final class CircuitBreaker implements CircuitBreakerInterface
         ?FailureClassifierInterface $classifier = null,
     ): mixed {
         $snapshot = $this->snapshot();
+        $admissionState = State::from($snapshot['state']);
         $probe = false;
         $admissionGeneration = $snapshot['halfOpenGeneration'];
 
@@ -82,6 +85,8 @@ final class CircuitBreaker implements CircuitBreakerInterface
             $probe = true;
             $this->activeProbeCount++;
             $admissionGeneration = $snapshot['halfOpenGeneration'];
+            // A synchronous listener must see the reserved probe as live.
+            $this->observeTransition($admissionState, State::HALF_OPEN, $context);
         }
 
         try {
@@ -94,6 +99,9 @@ final class CircuitBreaker implements CircuitBreakerInterface
                     && $current['halfOpenGeneration'] === $admissionGeneration
                     && in_array($current['state'], [State::HALF_OPEN->value, State::CLOSED->value], true);
                 $decision = ($classifier ?? new DefaultFailureClassifier)->classify($failure, $context);
+                // Classification is user code and may re-enter this breaker.
+                // Account only against the state and probe round it leaves behind.
+                $current = $this->snapshot();
                 if (! $decision->countsAsCircuitFailure() && $probe
                     && $current['state'] === State::HALF_OPEN->value
                     && $current['halfOpenGeneration'] === $admissionGeneration) {
@@ -103,18 +111,23 @@ final class CircuitBreaker implements CircuitBreakerInterface
                     && in_array($current['state'], [State::HALF_OPEN->value, State::CLOSED->value], true)) {
                     // A failed in-flight probe wins over an earlier successful
                     // probe from the same half-open admission round.
-                    $this->saveSnapshot($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration));
+                    $this->saveTransition($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration), State::from($current['state']), $context);
                 } elseif ($decision->countsAsCircuitFailure() && ! $probe && $current['state'] === State::CLOSED->value) {
                     $current['failureCount']++;
                     if ($current['failureCount'] >= $policy->failureThreshold()) {
                         $current = $this->openSnapshot($policy, $this->clock->nowMilliseconds(), $current['halfOpenGeneration']);
                     }
                     $this->saveSnapshot($current);
+                    $this->observeTransition(State::CLOSED, State::from($current['state']), $context);
                 }
             } catch (Throwable) {
                 if ($mayReopenProbe) {
                     try {
-                        $this->saveSnapshot($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration));
+                        $current = $this->snapshot();
+                        if ($current['halfOpenGeneration'] === $admissionGeneration
+                            && in_array($current['state'], [State::HALF_OPEN->value, State::CLOSED->value], true)) {
+                            $this->saveTransition($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration), State::from($current['state']), $context);
+                        }
                     } catch (Throwable) {
                         // Accounting infrastructure must never replace the operation failure.
                     }
@@ -139,7 +152,7 @@ final class CircuitBreaker implements CircuitBreakerInterface
                 && $current['state'] === State::HALF_OPEN->value
                 && $current['halfOpenGeneration'] === $admissionGeneration;
             if ($probe && $current['state'] === State::HALF_OPEN->value && $current['halfOpenGeneration'] === $admissionGeneration) {
-                $this->saveSnapshot($this->closedSnapshot($admissionGeneration));
+                $this->saveTransition($this->closedSnapshot($admissionGeneration), State::HALF_OPEN, $context);
             } elseif (! $probe && $current['state'] === State::CLOSED->value) {
                 // This policy counts consecutive failed logical operations.
                 // Rolling-window accounting is deferred to a future policy/store.
@@ -152,7 +165,10 @@ final class CircuitBreaker implements CircuitBreakerInterface
                 // reopen it so a transient store failure cannot strand a full
                 // half-open probe budget indefinitely.
                 try {
-                    $this->saveSnapshot($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration));
+                    $current = $this->snapshot();
+                    if ($current['state'] === State::HALF_OPEN->value && $current['halfOpenGeneration'] === $admissionGeneration) {
+                        $this->saveTransition($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration), State::HALF_OPEN, $context);
+                    }
                 } catch (Throwable) {
                     // Preserve the already successful operation result.
                 }
@@ -240,5 +256,19 @@ final class CircuitBreaker implements CircuitBreakerInterface
     private function saveSnapshot(array $snapshot): void
     {
         $this->store->set($this->key, $snapshot);
+    }
+
+    /** @param array{state: string, failureCount: int, openedAtMilliseconds: int|null, halfOpenProbeCount: int, halfOpenGeneration: string} $snapshot */
+    private function saveTransition(array $snapshot, State $previous, OperationContext $context): void
+    {
+        $this->saveSnapshot($snapshot);
+        $this->observeTransition($previous, State::from($snapshot['state']), $context);
+    }
+
+    private function observeTransition(State $previous, State $current, OperationContext $context): void
+    {
+        if ($previous !== $current) {
+            $this->instrumentation?->circuitStateChanged(new CircuitStateChanged($context->operation(), $previous, $current));
+        }
     }
 }

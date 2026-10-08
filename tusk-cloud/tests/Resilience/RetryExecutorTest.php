@@ -10,8 +10,10 @@ use Throwable;
 use Tusk\Cloud\Resilience\Backoff\FixedBackoff;
 use Tusk\Cloud\Resilience\BackoffStrategyInterface;
 use Tusk\Cloud\Resilience\Deadline;
+use Tusk\Cloud\Resilience\Event\RetryScheduled;
 use Tusk\Cloud\Resilience\Exception\OperationCancelledException;
 use Tusk\Cloud\Resilience\Exception\ResilienceDeadlineExceededException;
+use Tusk\Cloud\Resilience\ResilienceInstrumentation;
 use Tusk\Cloud\Resilience\RetryExecutor;
 use Tusk\Cloud\Resilience\RetryPolicy;
 use Tusk\Cloud\Resilience\Testing\FakeClock;
@@ -20,11 +22,15 @@ use Tusk\Contracts\Cloud\Resilience\ClockInterface;
 use Tusk\Contracts\Cloud\Resilience\FailureClassifierInterface;
 use Tusk\Contracts\Cloud\Resilience\FailureDecision;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
+use Tusk\Contracts\Events\EventDispatcherInterface;
+use Tusk\Contracts\Observability\TelemetryProviderInterface;
 
 final class RetryExecutorTest extends TestCase
 {
     public function test_cancellation_stops_retries_before_the_next_attempt(): void
     {
+        $events = $increments = [];
+        $instrumentation = $this->instrumentation($events, $increments);
         $state = (object) ['cancelled' => false];
         $token = new class($state) implements CancellationTokenInterface
         {
@@ -49,7 +55,7 @@ final class RetryExecutorTest extends TestCase
         $attempts = 0;
 
         try {
-            (new RetryExecutor(new FakeClock))->execute(static function () use (&$attempts): never {
+            (new RetryExecutor(new FakeClock, $instrumentation))->execute(static function () use (&$attempts): never {
                 $attempts++;
                 throw new RuntimeException('temporary');
             }, OperationContext::create('read', retryAllowed: true, cancellationToken: $token), RetryPolicy::create(maxAttempts: 3, classifier: $classifier));
@@ -57,6 +63,8 @@ final class RetryExecutorTest extends TestCase
         } catch (OperationCancelledException) {
             self::assertSame(1, $attempts);
         }
+        self::assertSame([], $events);
+        self::assertSame([], $increments);
     }
 
     public function test_first_attempt_returns_result_without_sleeping(): void
@@ -79,13 +87,15 @@ final class RetryExecutorTest extends TestCase
 
     public function test_retryable_failure_retries_with_one_based_backoff_and_previous_delay(): void
     {
+        $events = $increments = [];
+        $instrumentation = $this->instrumentation($events, $increments);
         $clock = new FakeClock;
         $context = OperationContext::create('read', retryAllowed: true);
         $attempts = 0;
-        $requests = [];
-        $backoff = new class($requests) implements BackoffStrategyInterface
+        $backoff = new class implements BackoffStrategyInterface
         {
-            public function __construct(private array &$requests) {}
+            /** @var list<array{int, int}> */
+            public array $requests = [];
 
             public function delayMilliseconds(int $retryNumber, int $previousDelayMilliseconds): int
             {
@@ -95,7 +105,7 @@ final class RetryExecutorTest extends TestCase
             }
         };
 
-        $result = (new RetryExecutor($clock))->execute(function () use (&$attempts): string {
+        $result = (new RetryExecutor($clock, $instrumentation))->execute(function () use (&$attempts): string {
             $attempts++;
             if ($attempts < 3) {
                 throw new RuntimeException('temporary');
@@ -106,18 +116,28 @@ final class RetryExecutorTest extends TestCase
 
         self::assertSame('recovered', $result);
         self::assertSame(3, $attempts);
-        self::assertSame([[1, 0], [2, 10]], $requests);
+        self::assertSame([[1, 0], [2, 10]], $backoff->requests);
         self::assertSame(30, $clock->nowMilliseconds());
+        self::assertEquals([
+            new RetryScheduled('read', 1, 10, RuntimeException::class),
+            new RetryScheduled('read', 2, 20, RuntimeException::class),
+        ], $events);
+        self::assertSame([
+            ['tusk.resilience.retries', 1, []],
+            ['tusk.resilience.retries', 1, []],
+        ], $increments);
     }
 
     public function test_terminal_failure_rethrows_the_same_throwable_without_backoff(): void
     {
+        $events = $increments = [];
+        $instrumentation = $this->instrumentation($events, $increments);
         $failure = new RuntimeException('terminal');
         $clock = new FakeClock;
         $attempts = 0;
 
         try {
-            (new RetryExecutor($clock))->execute(function () use ($failure, &$attempts): never {
+            (new RetryExecutor($clock, $instrumentation))->execute(function () use ($failure, &$attempts): never {
                 $attempts++;
                 throw $failure;
             }, OperationContext::create('read', retryAllowed: true), RetryPolicy::create(maxAttempts: 3));
@@ -128,16 +148,48 @@ final class RetryExecutorTest extends TestCase
 
         self::assertSame(1, $attempts);
         self::assertSame(0, $clock->nowMilliseconds());
+        self::assertSame([], $events);
+        self::assertSame([], $increments);
+    }
+
+    public function test_invalid_observation_payload_does_not_change_existing_custom_backoff_behavior(): void
+    {
+        $events = $increments = [];
+        $instrumentation = $this->instrumentation($events, $increments);
+        $clock = new FakeClock;
+        $backoff = new class implements BackoffStrategyInterface
+        {
+            public function delayMilliseconds(int $retryNumber, int $previousDelayMilliseconds): int
+            {
+                return -1;
+            }
+        };
+        $attempts = 0;
+
+        self::assertSame('recovered', (new RetryExecutor($clock, $instrumentation))->execute(static function () use (&$attempts): string {
+            if (++$attempts === 1) {
+                throw new RuntimeException('temporary');
+            }
+
+            return 'recovered';
+        }, OperationContext::create('read', retryAllowed: true), RetryPolicy::create(maxAttempts: 2, backoffStrategy: $backoff, classifier: $this->retryableClassifier())));
+
+        self::assertSame(2, $attempts);
+        self::assertSame(0, $clock->nowMilliseconds());
+        self::assertSame([], $events);
+        self::assertSame([], $increments);
     }
 
     public function test_exhausted_attempts_rethrow_the_last_original_throwable(): void
     {
+        $events = $increments = [];
+        $instrumentation = $this->instrumentation($events, $increments);
         $first = new RuntimeException('first');
         $last = new RuntimeException('last');
         $attempts = 0;
 
         try {
-            (new RetryExecutor(new FakeClock))->execute(function () use ($first, $last, &$attempts): never {
+            (new RetryExecutor(new FakeClock, $instrumentation))->execute(function () use ($first, $last, &$attempts): never {
                 $attempts++;
                 throw $attempts === 1 ? $first : $last;
             }, OperationContext::create('read', retryAllowed: true), RetryPolicy::create(maxAttempts: 2, classifier: $this->retryableClassifier()));
@@ -147,15 +199,19 @@ final class RetryExecutorTest extends TestCase
         }
 
         self::assertSame(2, $attempts);
+        self::assertEquals([new RetryScheduled('read', 1, 0, RuntimeException::class)], $events);
+        self::assertSame([['tusk.resilience.retries', 1, []]], $increments);
     }
 
     public function test_unsafe_operation_is_not_retried_without_policy_opt_in(): void
     {
+        $events = $increments = [];
+        $instrumentation = $this->instrumentation($events, $increments);
         $attempts = 0;
         $failure = new RuntimeException('write failed');
 
         try {
-            (new RetryExecutor(new FakeClock))->execute(function () use (&$attempts, $failure): never {
+            (new RetryExecutor(new FakeClock, $instrumentation))->execute(function () use (&$attempts, $failure): never {
                 $attempts++;
                 throw $failure;
             }, OperationContext::create('write'), RetryPolicy::create(maxAttempts: 3, classifier: $this->retryableClassifier()));
@@ -165,6 +221,8 @@ final class RetryExecutorTest extends TestCase
         }
 
         self::assertSame(1, $attempts);
+        self::assertSame([], $events);
+        self::assertSame([], $increments);
     }
 
     public function test_policy_can_explicitly_allow_unsafe_retry(): void
@@ -202,12 +260,14 @@ final class RetryExecutorTest extends TestCase
 
     public function test_backoff_exceeding_remaining_deadline_preserves_failure(): void
     {
+        $events = $increments = [];
+        $instrumentation = $this->instrumentation($events, $increments);
         $clock = new FakeClock(100);
         $failure = new RuntimeException('temporary');
         $attempts = 0;
 
         try {
-            (new RetryExecutor($clock))->execute(function () use (&$attempts, $failure): never {
+            (new RetryExecutor($clock, $instrumentation))->execute(function () use (&$attempts, $failure): never {
                 $attempts++;
                 throw $failure;
             }, OperationContext::create('read', new Deadline(109), retryAllowed: true), RetryPolicy::create(maxAttempts: 3, backoffStrategy: FixedBackoff::create(10), classifier: $this->retryableClassifier()));
@@ -219,6 +279,8 @@ final class RetryExecutorTest extends TestCase
 
         self::assertSame(1, $attempts);
         self::assertSame(100, $clock->nowMilliseconds());
+        self::assertSame([], $events);
+        self::assertSame([], $increments);
     }
 
     public function test_backoff_stops_if_the_clock_oversleeps_past_the_deadline(): void
@@ -285,10 +347,9 @@ final class RetryExecutorTest extends TestCase
     {
         $context = OperationContext::create('read', retryAllowed: true, metadata: ['trace' => 'abc']);
         $failure = new RuntimeException('temporary');
-        $classifiedContext = null;
-        $classifier = new class($classifiedContext) implements FailureClassifierInterface
+        $classifier = new class implements FailureClassifierInterface
         {
-            public function __construct(private ?OperationContext &$classifiedContext) {}
+            public ?OperationContext $classifiedContext = null;
 
             public function classify(Throwable $failure, OperationContext $context): FailureDecision
             {
@@ -309,7 +370,27 @@ final class RetryExecutorTest extends TestCase
         }, $context, RetryPolicy::create(maxAttempts: 2, classifier: $classifier));
 
         self::assertSame('ok', $result);
-        self::assertSame($context, $classifiedContext);
+        self::assertSame($context, $classifier->classifiedContext);
+    }
+
+    /**
+     * @param  list<object>  $events
+     * @param  list<array{string, int|float, array<string, scalar|null>}>  $increments
+     */
+    private function instrumentation(array &$events, array &$increments): ResilienceInstrumentation
+    {
+        $dispatcher = $this->createMock(EventDispatcherInterface::class);
+        $dispatcher->method('dispatch')->willReturnCallback(static function (object $event) use (&$events): object {
+            $events[] = $event;
+
+            return $event;
+        });
+        $telemetry = $this->createMock(TelemetryProviderInterface::class);
+        $telemetry->method('increment')->willReturnCallback(static function (string $name, int|float $value, array $attributes) use (&$increments): void {
+            $increments[] = [$name, $value, $attributes];
+        });
+
+        return new ResilienceInstrumentation($dispatcher, $telemetry);
     }
 
     private function retryableClassifier(): FailureClassifierInterface

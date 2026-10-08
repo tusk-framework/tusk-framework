@@ -12,6 +12,7 @@ use LogicException;
 use Nyholm\Psr7\Request;
 use Nyholm\Psr7\Response;
 use Nyholm\Psr7\Stream;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Client\NetworkExceptionInterface;
@@ -23,12 +24,14 @@ use Tusk\Cloud\Resilience\Backoff\FixedBackoff;
 use Tusk\Cloud\Resilience\BulkheadPolicy;
 use Tusk\Cloud\Resilience\CircuitBreakerPolicy;
 use Tusk\Cloud\Resilience\Deadline;
+use Tusk\Cloud\Resilience\Event\RetryScheduled;
 use Tusk\Cloud\Resilience\Exception\BulkheadRejectedException;
 use Tusk\Cloud\Resilience\Exception\CircuitOpenException;
 use Tusk\Cloud\Resilience\Exception\OperationCancelledException;
 use Tusk\Cloud\Resilience\Exception\ResilienceDeadlineExceededException;
 use Tusk\Cloud\Resilience\Http\Psr18ResilientClient;
 use Tusk\Cloud\Resilience\Http\RequestReplayPolicy;
+use Tusk\Cloud\Resilience\Http\RetryableResponseException;
 use Tusk\Cloud\Resilience\InMemoryStateStore;
 use Tusk\Cloud\Resilience\RateLimitPolicy;
 use Tusk\Cloud\Resilience\ResiliencePipelineFactory;
@@ -36,9 +39,85 @@ use Tusk\Cloud\Resilience\RetryPolicy;
 use Tusk\Cloud\Resilience\Testing\FakeClock;
 use Tusk\Contracts\Cloud\Resilience\CancellationTokenInterface;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
+use Tusk\Contracts\Events\EventDispatcherInterface;
+use Tusk\Contracts\Observability\TelemetryProviderInterface;
 
 final class Psr18ResilientClientTest extends TestCase
 {
+    #[DataProvider('observedHttpRuns')]
+    public function test_configured_factory_observes_one_http_outcome_without_changing_final_response_or_replay(int $finalStatus, bool $allowBodyReplay, bool $dispatcherThrows, bool $telemetryThrows): void
+    {
+        $clock = new FakeClock;
+        $events = $increments = $observations = $bodyReads = [];
+        $dispatcher = $this->createMock(EventDispatcherInterface::class);
+        $dispatcher->method('dispatch')->willReturnCallback(static function (object $event) use (&$events, $dispatcherThrows): object {
+            $events[] = $event;
+            if ($dispatcherThrows) {
+                throw new \Error('listener failed');
+            }
+
+            return $event;
+        });
+        $telemetry = $this->createMock(TelemetryProviderInterface::class);
+        $telemetry->method('increment')->willReturnCallback(static function (string $name, int|float $value, array $attributes) use (&$increments, $telemetryThrows): void {
+            $increments[] = [$name, $value, $attributes];
+            if ($telemetryThrows) {
+                throw new \Error('counter failed');
+            }
+        });
+        $telemetry->method('observe')->willReturnCallback(static function (string $name, float $value, array $attributes) use (&$observations, $telemetryThrows): void {
+            $observations[] = [$name, $value, $attributes];
+            if ($telemetryThrows) {
+                throw new \Error('observation failed');
+            }
+        });
+        $first = new Response(503, [], 'private first response');
+        $last = new Response($finalStatus, [], 'private last response');
+        $responses = [$first, $last];
+        $inner = new RecordingPsr18Client(static function (RequestInterface $request) use ($clock, &$responses, &$bodyReads): ResponseInterface {
+            $clock->sleepMilliseconds(5);
+            $bodyReads[] = $request->getBody()->getContents();
+
+            return array_shift($responses);
+        });
+        $client = new Psr18ResilientClient(
+            client: $inner,
+            pipelineFactory: new ResiliencePipelineFactory($clock, new InMemoryStateStore, $dispatcher, $telemetry),
+            operation: 'payments.http',
+            retryPolicy: RetryPolicy::create(maxAttempts: 2, backoffStrategy: FixedBackoff::create(25), allowUnsafeRetries: true),
+            replayPolicy: RequestReplayPolicy::create(allowBodyReplay: $allowBodyReplay),
+        );
+        $body = Stream::create('private payload');
+        $body->seek(2);
+        $request = new Request('POST', 'https://example.test/private?token=secret', ['Idempotency-Key' => 'private-key', 'Authorization' => 'private-token'], $body);
+
+        self::assertSame($allowBodyReplay ? $last : $first, $client->sendRequest($request));
+        self::assertSame($allowBodyReplay ? 2 : 1, $inner->calls);
+        self::assertSame($allowBodyReplay ? [$request, $request] : [$request], $inner->requests);
+        self::assertSame($allowBodyReplay ? ['ivate payload', 'ivate payload'] : ['ivate payload'], $bodyReads);
+        self::assertEquals($allowBodyReplay ? [new RetryScheduled('payments.http', 1, 25, RetryableResponseException::class)] : [], $events);
+        $outcome = $allowBodyReplay && $finalStatus === 200 ? 'success' : 'failure';
+        $expectedIncrements = $allowBodyReplay ? [['tusk.resilience.retries', 1, []]] : [];
+        $expectedIncrements[] = ['tusk.resilience.operations', 1, ['outcome' => $outcome]];
+        self::assertSame($expectedIncrements, $increments);
+        self::assertSame([
+            ['tusk.resilience.operation.duration', $allowBodyReplay ? 0.035 : 0.005, ['outcome' => $outcome]],
+        ], $observations);
+    }
+
+    /** @return array<string, array{int, bool, bool, bool}> */
+    public static function observedHttpRuns(): array
+    {
+        $cases = [];
+        foreach (['retry recovers' => [200, true], 'retry exhausted' => [503, true], 'body replay denied' => [503, false]] as $path => [$status, $replay]) {
+            foreach (['healthy' => [false, false], 'dispatcher throws' => [true, false], 'telemetry throws' => [false, true], 'both throw' => [true, true]] as $sinks => [$dispatcherThrows, $telemetryThrows]) {
+                $cases[$path.' / '.$sinks] = [$status, $replay, $dispatcherThrows, $telemetryThrows];
+            }
+        }
+
+        return $cases;
+    }
+
     public function test_retries_a_transient_response_for_an_idempotent_request(): void
     {
         $responses = [new Response(503), new Response(200)];
