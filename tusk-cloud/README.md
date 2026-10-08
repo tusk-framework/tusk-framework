@@ -88,6 +88,8 @@ Metrics use fixed names and bounded labels:
 | `tusk.resilience.circuit.transitions` | Counter, once per state transition | `from`, `to`: `CLOSED`, `OPEN`, `HALF_OPEN` |
 | `tusk.resilience.operation.duration` | Observation in elapsed seconds | `outcome`: the same four values as the operations counter |
 
+Custom backoff delays should be nonnegative. A negative delay retains legacy retry execution behavior but emits neither `RetryScheduled` nor a `tusk.resilience.retries` increment.
+
 Duration uses the factory's monotonic clock around the full logical invocation, including retries, backoff, policy waits, and fallback. Fallback success/failure produces one final outcome rather than a separate operation count. A failed fallback still throws `ResilienceFallbackException` retaining both failures. For PSR-18, the outcome describes the pipeline: an exhausted transient response records `failure` even though the decorator returns that exact final response to the caller.
 
 Dispatch and metric calls are synchronous and can add latency. Listeners and providers should be fast; applications needing asynchronous export can supply their own bounded queue adapter. Each sink call catches `Throwable` independently: a listener failure cannot suppress a metric attempt, and a counter failure cannot suppress duration observation. Sink failures are swallowed without replacing operation results, original operation/policy failures, or fallback results/failures; sink calls are never retried. Clock failures disable duration recording while preserving outcome-counter attempts. The application/runtime owns provider flushing and shutdown; the factory does neither.

@@ -8,6 +8,7 @@ use Closure;
 use Fiber;
 use InvalidArgumentException;
 use LogicException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Tusk\Cloud\Resilience\CircuitBreaker;
@@ -101,6 +102,108 @@ final class CircuitBreakerTest extends TestCase
         $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('second'));
         self::assertSame(State::CLOSED, $breaker->state());
         self::assertSame(1, $breaker->snapshot()['failureCount']);
+    }
+
+    public function test_reentrant_classifier_observes_only_one_closed_to_open_transition(): void
+    {
+        $clock = new FakeClock(100);
+        $breaker = new CircuitBreaker(new InMemoryStateStore, $clock, 'payments', $this->instrumentation);
+        $context = OperationContext::create('charge');
+        $policy = CircuitBreakerPolicy::create(failureThreshold: 1);
+        $outerFailure = new RuntimeException('outer failed');
+        $classifier = $this->callbackClassifier(function () use ($breaker, $context, $policy, $clock): void {
+            $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('inner failed'));
+            $clock->sleepMilliseconds(7);
+        });
+
+        $this->catchClassifiedFailure($breaker, $context, $policy, $outerFailure, $classifier);
+
+        self::assertSame([1, 1], [count($this->events), count($this->increments)]);
+        self::assertSame(State::OPEN, $breaker->state());
+        self::assertSame(100, $breaker->snapshot()['openedAtMilliseconds']);
+        $this->assertTransitions([[State::CLOSED, State::OPEN]]);
+    }
+
+    #[DataProvider('classifierDecisions')]
+    public function test_reentrant_probe_classifier_does_not_overwrite_an_inner_reopen(bool $counts, bool $throws): void
+    {
+        $clock = new FakeClock(100);
+        $breaker = new CircuitBreaker(new InMemoryStateStore, $clock, 'payments', $this->instrumentation);
+        $context = OperationContext::create('charge');
+        $policy = CircuitBreakerPolicy::create(failureThreshold: 1, openDurationMilliseconds: 10, halfOpenProbeLimit: 2);
+        $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('outage'));
+        $clock->sleepMilliseconds(10);
+        $classifier = $this->callbackClassifier(function () use ($breaker, $context, $policy, $clock): void {
+            $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('inner probe failed'));
+            $clock->sleepMilliseconds(7);
+        }, $counts, $throws);
+
+        $this->catchClassifiedFailure($breaker, $context, $policy, new RuntimeException('outer probe failed'), $classifier);
+
+        self::assertSame(State::OPEN, $breaker->state());
+        self::assertSame(110, $breaker->snapshot()['openedAtMilliseconds']);
+        $this->assertTransitions([[State::CLOSED, State::OPEN], [State::OPEN, State::HALF_OPEN], [State::HALF_OPEN, State::OPEN]]);
+    }
+
+    public function test_reentrant_probe_classifier_observes_closed_as_the_source_after_inner_success(): void
+    {
+        $clock = new FakeClock;
+        $breaker = new CircuitBreaker(new InMemoryStateStore, $clock, 'payments', $this->instrumentation);
+        $context = OperationContext::create('charge');
+        $policy = CircuitBreakerPolicy::create(failureThreshold: 1, openDurationMilliseconds: 10, halfOpenProbeLimit: 2);
+        $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('outage'));
+        $clock->sleepMilliseconds(10);
+        $classifier = $this->callbackClassifier(static function () use ($breaker, $context, $policy): void {
+            $breaker->execute(static fn (): string => 'inner success', $context, $policy);
+        });
+
+        $this->catchClassifiedFailure($breaker, $context, $policy, new RuntimeException('outer probe failed'), $classifier);
+
+        self::assertSame(State::OPEN, $breaker->state());
+        $this->assertTransitions([[State::CLOSED, State::OPEN], [State::OPEN, State::HALF_OPEN], [State::HALF_OPEN, State::CLOSED], [State::CLOSED, State::OPEN]]);
+    }
+
+    #[DataProvider('classifierDecisions')]
+    public function test_reentrant_probe_classifier_cannot_account_against_a_later_generation(bool $counts, bool $throws): void
+    {
+        $clock = new FakeClock;
+        $breaker = new CircuitBreaker(new InMemoryStateStore, $clock, 'payments', $this->instrumentation);
+        $context = OperationContext::create('charge');
+        $policy = CircuitBreakerPolicy::create(failureThreshold: 1, openDurationMilliseconds: 10, halfOpenProbeLimit: 2);
+        $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('outage'));
+        $clock->sleepMilliseconds(10);
+        $newProbe = null;
+        $before = null;
+        $classifier = $this->callbackClassifier(function () use ($breaker, $context, $policy, $clock, &$newProbe, &$before): void {
+            $breaker->execute(static fn (): string => 'inner success', $context, $policy);
+            $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('new outage'));
+            $clock->sleepMilliseconds(10);
+            $newProbe = new Fiber(static fn (): mixed => $breaker->execute(static function (): string {
+                Fiber::suspend();
+
+                return 'new success';
+            }, $context, $policy));
+            $newProbe->start();
+            $before = $breaker->snapshot();
+        }, $counts, $throws);
+
+        $this->catchClassifiedFailure($breaker, $context, $policy, new RuntimeException('old probe failed'), $classifier);
+
+        self::assertInstanceOf(Fiber::class, $newProbe);
+        self::assertSame($before, $breaker->snapshot());
+        $this->assertLaterRoundTransitions();
+        $newProbe->resume();
+        self::assertSame('new success', $newProbe->getReturn());
+        self::assertSame(State::CLOSED, $breaker->state());
+        $this->assertLaterRoundTransitions(closed: true);
+    }
+
+    /** @return iterable<string, array{bool, bool}> */
+    public static function classifierDecisions(): iterable
+    {
+        yield 'counting' => [true, false];
+        yield 'non-counting' => [false, false];
+        yield 'throwing' => [true, true];
     }
 
     public function test_open_rejects_without_invoking_operation_or_mutating_snapshot(): void
@@ -687,6 +790,35 @@ final class CircuitBreakerTest extends TestCase
         $this->assertTransitions([[State::CLOSED, State::OPEN], [State::OPEN, State::HALF_OPEN], [State::HALF_OPEN, State::OPEN]]);
     }
 
+    #[DataProvider('probeOutcomes')]
+    public function test_probe_recovery_does_not_duplicate_a_reentrant_reopen_during_a_failed_write(bool $fails): void
+    {
+        $clock = new FakeClock;
+        $context = OperationContext::create('charge');
+        $policy = CircuitBreakerPolicy::create(failureThreshold: 1, openDurationMilliseconds: 10, halfOpenProbeLimit: 2);
+        $breaker = new CircuitBreaker($this->failingStore([3], function () use (&$breaker, $context, $policy): void {
+            $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('inner probe failed'));
+        }), $clock, 'payments', $this->instrumentation);
+        $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('outage'));
+        $clock->sleepMilliseconds(10);
+
+        if ($fails) {
+            $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('outer probe failed'));
+        } else {
+            self::assertSame('outer success', $breaker->execute(static fn (): string => 'outer success', $context, $policy));
+        }
+
+        self::assertSame(State::OPEN, $breaker->state());
+        $this->assertTransitions([[State::CLOSED, State::OPEN], [State::OPEN, State::HALF_OPEN], [State::HALF_OPEN, State::OPEN]]);
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function probeOutcomes(): iterable
+    {
+        yield 'failure' => [true];
+        yield 'success' => [false];
+    }
+
     public function test_transition_listener_sees_persisted_state_and_cannot_over_admit_a_live_probe(): void
     {
         $store = new InMemoryStateStore;
@@ -737,16 +869,16 @@ final class CircuitBreakerTest extends TestCase
     }
 
     /** @param list<int> $failingWrites */
-    private function failingStore(array $failingWrites): StateStoreInterface
+    private function failingStore(array $failingWrites, ?Closure $beforeFailure = null): StateStoreInterface
     {
-        return new class($failingWrites) implements StateStoreInterface
+        return new class($failingWrites, $beforeFailure) implements StateStoreInterface
         {
             private InMemoryStateStore $inner;
 
             private int $writes = 0;
 
             /** @param list<int> $failingWrites */
-            public function __construct(private array $failingWrites)
+            public function __construct(private array $failingWrites, private readonly ?Closure $beforeFailure)
             {
                 $this->inner = new InMemoryStateStore;
             }
@@ -759,11 +891,42 @@ final class CircuitBreakerTest extends TestCase
             public function set(string $key, array $data, ?float $ttl = null): void
             {
                 if (in_array(++$this->writes, $this->failingWrites, true)) {
+                    ($this->beforeFailure)?->__invoke();
                     throw new RuntimeException('store write failed');
                 }
                 $this->inner->set($key, $data, $ttl);
             }
         };
+    }
+
+    private function callbackClassifier(Closure $callback, bool $counts = true, bool $throws = false): FailureClassifierInterface
+    {
+        return new class($callback, $counts, $throws) implements FailureClassifierInterface
+        {
+            public function __construct(private readonly Closure $callback, private readonly bool $counts, private readonly bool $throws) {}
+
+            public function classify(\Throwable $failure, OperationContext $context): FailureDecision
+            {
+                ($this->callback)();
+                if ($this->throws) {
+                    throw new LogicException('classifier failed');
+                }
+
+                return FailureDecision::terminal(circuitFailure: $this->counts);
+            }
+        };
+    }
+
+    private function catchClassifiedFailure(CircuitBreaker $breaker, OperationContext $context, CircuitBreakerPolicy $policy, RuntimeException $failure, FailureClassifierInterface $classifier): void
+    {
+        try {
+            $breaker->execute(static function () use ($failure): never {
+                throw $failure;
+            }, $context, $policy, $classifier);
+            self::fail('Operation failure was swallowed.');
+        } catch (RuntimeException $caught) {
+            self::assertSame($failure, $caught);
+        }
     }
 
     private function generation(CircuitBreaker $breaker, int $counter): string

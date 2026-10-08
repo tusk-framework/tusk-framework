@@ -92,14 +92,16 @@ final class CircuitBreaker implements CircuitBreakerInterface
         try {
             $result = $operation($context);
         } catch (Throwable $failure) {
-            $reopenFrom = null;
+            $mayReopenProbe = false;
             try {
                 $current = $this->snapshot();
-                $reopenFrom = $probe
+                $mayReopenProbe = $probe
                     && $current['halfOpenGeneration'] === $admissionGeneration
-                    && in_array($current['state'], [State::HALF_OPEN->value, State::CLOSED->value], true)
-                        ? State::from($current['state']) : null;
+                    && in_array($current['state'], [State::HALF_OPEN->value, State::CLOSED->value], true);
                 $decision = ($classifier ?? new DefaultFailureClassifier)->classify($failure, $context);
+                // Classification is user code and may re-enter this breaker.
+                // Account only against the state and probe round it leaves behind.
+                $current = $this->snapshot();
                 if (! $decision->countsAsCircuitFailure() && $probe
                     && $current['state'] === State::HALF_OPEN->value
                     && $current['halfOpenGeneration'] === $admissionGeneration) {
@@ -119,9 +121,13 @@ final class CircuitBreaker implements CircuitBreakerInterface
                     $this->observeTransition(State::CLOSED, State::from($current['state']), $context);
                 }
             } catch (Throwable) {
-                if ($reopenFrom !== null) {
+                if ($mayReopenProbe) {
                     try {
-                        $this->saveTransition($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration), $reopenFrom, $context);
+                        $current = $this->snapshot();
+                        if ($current['halfOpenGeneration'] === $admissionGeneration
+                            && in_array($current['state'], [State::HALF_OPEN->value, State::CLOSED->value], true)) {
+                            $this->saveTransition($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration), State::from($current['state']), $context);
+                        }
                     } catch (Throwable) {
                         // Accounting infrastructure must never replace the operation failure.
                     }
@@ -159,7 +165,10 @@ final class CircuitBreaker implements CircuitBreakerInterface
                 // reopen it so a transient store failure cannot strand a full
                 // half-open probe budget indefinitely.
                 try {
-                    $this->saveTransition($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration), State::HALF_OPEN, $context);
+                    $current = $this->snapshot();
+                    if ($current['state'] === State::HALF_OPEN->value && $current['halfOpenGeneration'] === $admissionGeneration) {
+                        $this->saveTransition($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration), State::HALF_OPEN, $context);
+                    }
                 } catch (Throwable) {
                     // Preserve the already successful operation result.
                 }
