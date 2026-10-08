@@ -1,122 +1,156 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tusk\Cloud\Resilience;
 
+use InvalidArgumentException;
+use Throwable;
 use Tusk\Cloud\Resilience\Exception\CircuitOpenException;
+use Tusk\Contracts\Cloud\Resilience\ClockInterface;
+use Tusk\Contracts\Cloud\Resilience\OperationContext;
 use Tusk\Contracts\Cloud\Resilience\StateStoreInterface;
 
-class CircuitBreaker implements CircuitBreakerInterface
+final class CircuitBreaker implements CircuitBreakerInterface
 {
-    private string $key;
+    private readonly string $key;
 
     public function __construct(
-        private StateStoreInterface $store,
-        private string $name = 'default',
-        private int $failureThreshold = 5,
-        private float $resetTimeout = 10.0 // Seconds before Half-Open
+        private readonly StateStoreInterface $store,
+        private readonly ClockInterface $clock,
+        string $name,
     ) {
+        $name = trim($name);
+        if ($name === '') {
+            throw new InvalidArgumentException('Circuit name cannot be blank.');
+        }
+
         $this->key = "cb:{$name}";
     }
 
-    public function execute(callable $action, ?callable $fallback = null): mixed
+    public function execute(callable $operation, OperationContext $context, CircuitBreakerPolicy $policy): mixed
     {
-        $data = $this->loadState();
-        $state = $data['state'];
+        $snapshot = $this->snapshot();
+        $probe = false;
 
-        if ($state === State::OPEN) {
-            if ($this->shouldAttemptReset($data['lastFailureTime'])) {
-                $this->transitionTo(State::HALF_OPEN);
-                $data = $this->loadState(); // Refresh after transition
-                $state = $data['state'];
-            } else {
-                return $this->handleFailure(new CircuitOpenException, $fallback);
+        if ($snapshot['state'] === State::OPEN->value) {
+            $openedAt = $snapshot['openedAtMilliseconds'];
+            $now = $this->clock->nowMilliseconds();
+            if ($now < $openedAt || $now - $openedAt < $policy->openDurationMilliseconds()) {
+                throw new CircuitOpenException;
             }
+
+            $snapshot['state'] = State::HALF_OPEN->value;
+            $snapshot['halfOpenProbeCount'] = 0;
+        }
+
+        if ($snapshot['state'] === State::HALF_OPEN->value) {
+            if ($snapshot['halfOpenProbeCount'] >= $policy->halfOpenProbeLimit()) {
+                throw new CircuitOpenException;
+            }
+
+            // Reserve before calling user code. The in-memory store provides
+            // process-local admission; distributed atomicity needs a store adapter.
+            $snapshot['halfOpenProbeCount']++;
+            $this->saveSnapshot($snapshot);
+            $probe = true;
         }
 
         try {
-            $result = $action();
-
-            if ($state === State::HALF_OPEN) {
-                $this->reset();
+            $result = $operation($context);
+        } catch (Throwable $failure) {
+            $current = $this->snapshot();
+            if ($probe && in_array($current['state'], [State::HALF_OPEN->value, State::CLOSED->value], true)) {
+                // A failed in-flight probe wins over an earlier successful
+                // probe from the same half-open admission round.
+                $this->saveSnapshot($this->openSnapshot($policy, $this->clock->nowMilliseconds()));
+            } elseif (! $probe && $current['state'] === State::CLOSED->value) {
+                $current['failureCount']++;
+                if ($current['failureCount'] >= $policy->failureThreshold()) {
+                    $current = $this->openSnapshot($policy, $this->clock->nowMilliseconds());
+                }
+                $this->saveSnapshot($current);
             }
 
-            return $result;
-        } catch (\Throwable $e) {
-            $this->recordFailure();
-
-            return $this->handleFailure($e, $fallback);
+            throw $failure;
         }
+
+        $current = $this->snapshot();
+        if ($probe && $current['state'] === State::HALF_OPEN->value) {
+            $this->saveSnapshot($this->closedSnapshot());
+        } elseif (! $probe && $current['state'] === State::CLOSED->value) {
+            // This policy counts consecutive failed logical operations.
+            // Rolling-window accounting is deferred to a future policy/store.
+            $current['failureCount'] = 0;
+            $this->saveSnapshot($current);
+        }
+
+        return $result;
     }
 
-    private function loadState(): array
+    public function state(): State
     {
-        return $this->store->get($this->key) ?: [
-            'state' => State::CLOSED,
-            'failureCount' => 0,
-            'lastFailureTime' => null,
+        return State::from($this->snapshot()['state']);
+    }
+
+    /**
+     * @return array{state: string, failureCount: int, openedAtMilliseconds: int|null, halfOpenProbeCount: int}
+     */
+    public function snapshot(): array
+    {
+        $data = $this->store->get($this->key);
+        if ($data === null || ! $this->validSnapshot($data)) {
+            return $this->closedSnapshot();
+        }
+
+        return [
+            'state' => $data['state'],
+            'failureCount' => $data['failureCount'],
+            'openedAtMilliseconds' => $data['openedAtMilliseconds'],
+            'halfOpenProbeCount' => $data['halfOpenProbeCount'],
         ];
     }
 
-    private function saveState(array $data): void
+    /** @param array<string, mixed> $data */
+    private function validSnapshot(array $data): bool
     {
-        $this->store->set($this->key, $data);
-    }
-
-    public function getState(): State
-    {
-        return $this->loadState()['state'];
-    }
-
-    private function block(): void
-    {
-        $this->saveState([
-            'state' => State::OPEN,
-            'failureCount' => $this->failureThreshold,
-            'lastFailureTime' => microtime(true),
-        ]);
-    }
-
-    private function reset(): void
-    {
-        $this->saveState([
-            'state' => State::CLOSED,
-            'failureCount' => 0,
-            'lastFailureTime' => null,
-        ]);
-    }
-
-    private function transitionTo(State $state): void
-    {
-        $data = $this->loadState();
-        $data['state'] = $state;
-        $this->saveState($data);
-    }
-
-    private function recordFailure(): void
-    {
-        $data = $this->loadState();
-        $data['failureCount']++;
-        if ($data['failureCount'] >= $this->failureThreshold) {
-            $this->block();
-        } else {
-            $this->saveState($data);
-        }
-    }
-
-    private function shouldAttemptReset(?float $lastFailureTime): bool
-    {
-        if ($lastFailureTime === null) {
+        if (! isset($data['state'], $data['failureCount'], $data['halfOpenProbeCount'])
+            || ! array_key_exists('openedAtMilliseconds', $data)
+            || ! is_string($data['state'])
+            || ! in_array($data['state'], [State::CLOSED->value, State::OPEN->value, State::HALF_OPEN->value], true)
+            || ! is_int($data['failureCount']) || $data['failureCount'] < 0
+            || ! is_int($data['halfOpenProbeCount']) || $data['halfOpenProbeCount'] < 0
+        ) {
             return false;
         }
 
-        return (microtime(true) - $lastFailureTime) > $this->resetTimeout;
+        if ($data['state'] === State::CLOSED->value) {
+            return $data['openedAtMilliseconds'] === null && $data['halfOpenProbeCount'] === 0;
+        }
+
+        return is_int($data['openedAtMilliseconds']) && $data['openedAtMilliseconds'] >= 0
+            && ($data['state'] !== State::OPEN->value || $data['halfOpenProbeCount'] === 0);
     }
 
-    private function handleFailure(\Throwable $e, ?callable $fallback): mixed
+    /**
+     * @return array{state: string, failureCount: int, openedAtMilliseconds: null, halfOpenProbeCount: int}
+     */
+    private function closedSnapshot(): array
     {
-        if ($fallback) {
-            return $fallback($e);
-        }
-        throw $e;
+        return ['state' => State::CLOSED->value, 'failureCount' => 0, 'openedAtMilliseconds' => null, 'halfOpenProbeCount' => 0];
+    }
+
+    /**
+     * @return array{state: string, failureCount: int, openedAtMilliseconds: int, halfOpenProbeCount: int}
+     */
+    private function openSnapshot(CircuitBreakerPolicy $policy, int $now): array
+    {
+        return ['state' => State::OPEN->value, 'failureCount' => $policy->failureThreshold(), 'openedAtMilliseconds' => $now, 'halfOpenProbeCount' => 0];
+    }
+
+    /** @param array{state: string, failureCount: int, openedAtMilliseconds: int|null, halfOpenProbeCount: int} $snapshot */
+    private function saveSnapshot(array $snapshot): void
+    {
+        $this->store->set($this->key, $snapshot);
     }
 }
