@@ -83,9 +83,8 @@ final readonly class Psr18ResilientClient implements ClientInterface
         }
 
         try {
-            if ($bodySize === 0) {
-                $bodyReplayable = true;
-            } elseif ($this->replayPolicy->allowsBodyReplay() && $body->isSeekable()) {
+            $bodyReplayPermitted = $bodySize === 0 || $this->replayPolicy->allowsBodyReplay();
+            if ($bodyReplayPermitted && $body->isSeekable()) {
                 $position = $body->tell();
                 if ($position >= 0) {
                     $bodyStartPosition = $position;
@@ -99,7 +98,7 @@ final readonly class Psr18ResilientClient implements ClientInterface
         $idempotentMethod = $this->replayPolicy->isIdempotentMethod($request->getMethod());
         $idempotencyKeys = $request->getHeader($this->replayPolicy->idempotencyKeyHeader());
         $hasIdempotencyKey = count($idempotencyKeys) === 1 && trim($idempotencyKeys[0]) !== '';
-        $retryAllowed = $bodyReplayable && (
+        $requestReplayAllowed = $bodyReplayable && (
             $idempotentMethod
             || ($this->retryPolicy->allowUnsafeRetries() && $hasIdempotencyKey)
         );
@@ -111,6 +110,9 @@ final readonly class Psr18ResilientClient implements ClientInterface
         if (! $baseContext instanceof OperationContext) {
             throw new InvalidArgumentException('The HTTP context factory must return an OperationContext.');
         }
+
+        $retryAllowed = $requestReplayAllowed
+            && ($this->contextFactory === null || $baseContext->retryAllowed());
 
         $context = OperationContext::create(
             operation: $baseContext->operation(),

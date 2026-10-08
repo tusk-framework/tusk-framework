@@ -124,6 +124,43 @@ final class Psr18ResilientClientTest extends TestCase
         self::assertSame(1, $inner->calls);
     }
 
+    public function test_does_not_retry_an_unsafe_method_with_ambiguous_idempotency_keys(): void
+    {
+        $responses = [new Response(503), new Response(200)];
+        $inner = new RecordingPsr18Client(static function () use (&$responses): ResponseInterface {
+            return array_shift($responses);
+        });
+        $client = $this->resilientClient(
+            $inner,
+            retryPolicy: $this->retryPolicy(2, allowUnsafeRetries: true),
+        );
+        $request = new Request(
+            'POST',
+            'https://example.test',
+            ['Idempotency-Key' => ['charge-1', 'charge-2']],
+        );
+
+        self::assertSame(503, $client->sendRequest($request)->getStatusCode());
+        self::assertSame(1, $inner->calls);
+    }
+
+    public function test_context_factory_can_veto_retries_for_an_idempotent_request(): void
+    {
+        $responses = [new Response(503), new Response(200)];
+        $inner = new RecordingPsr18Client(static function () use (&$responses): ResponseInterface {
+            return array_shift($responses);
+        });
+        $context = OperationContext::create('http.request', retryAllowed: false);
+        $client = $this->resilientClient(
+            $inner,
+            retryPolicy: $this->retryPolicy(2),
+            contextFactory: static fn (RequestInterface $request): OperationContext => $context,
+        );
+
+        self::assertSame(503, $client->sendRequest(new Request('GET', 'https://example.test'))->getStatusCode());
+        self::assertSame(1, $inner->calls);
+    }
+
     public function test_retries_an_unsafe_method_only_with_policy_key_and_replayable_body(): void
     {
         $bodyReads = [];
@@ -158,6 +195,21 @@ final class Psr18ResilientClientTest extends TestCase
         );
 
         self::assertSame(503, $client->sendRequest(new Request('GET', 'https://example.test', [], $stream))->getStatusCode());
+        self::assertSame(1, $inner->calls);
+    }
+
+    public function test_does_not_retry_when_an_empty_body_stream_has_no_readable_position(): void
+    {
+        $responses = [new Response(503), new Response(200)];
+        $inner = new RecordingPsr18Client(static function () use (&$responses): ResponseInterface {
+            return array_shift($responses);
+        });
+        $body = new PumpStream(static fn (int $length): string => '', ['size' => 0]);
+        self::assertSame(0, $body->getSize());
+        self::assertFalse($body->isSeekable());
+        $client = $this->resilientClient($inner, retryPolicy: $this->retryPolicy(2));
+
+        self::assertSame(503, $client->sendRequest(new Request('GET', 'https://example.test', [], $body))->getStatusCode());
         self::assertSame(1, $inner->calls);
     }
 
