@@ -8,6 +8,7 @@ use RuntimeException;
 use Tusk\Config\Repository;
 use Tusk\Contracts\Observability\TelemetryProviderInterface;
 use Tusk\Foundation\Application;
+use Tusk\Runtime\RuntimeConfiguration;
 use Tusk\Runtime\Observability\RuntimeObservability;
 use Tusk\Runtime\Jobs\JobHandlerRegistry;
 use Tusk\Web\HttpKernel;
@@ -132,6 +133,43 @@ PHP);
             self::assertSame('job', $container->export()['scopes']['TuskBuilderJobs\\Welcome']);
         } finally {
             unlink($this->basePath.'/app/Jobs/Welcome.php');
+            rmdir($this->basePath.'/app/Jobs');
+            rmdir($this->basePath.'/app');
+        }
+    }
+
+    public function test_with_jobs_enables_queue_capability_without_replacing_runtime_modules(): void
+    {
+        mkdir($this->basePath.'/app/Jobs', 0777, true);
+        file_put_contents($this->basePath.'/config/runtime.php', <<<'PHP'
+<?php
+
+return ['runtime' => ['modules' => ['http']], 'observability' => ['enabled' => false]];
+PHP);
+
+        $application = Application::configure($this->basePath)
+            ->withJobs('app/Jobs')
+            ->create();
+
+        self::assertSame(['http', 'capabilities.jobs'], $application->container()->get(RuntimeConfiguration::class)->modules());
+        self::assertTrue($application->container()->has(TelemetryProviderInterface::class));
+
+        rmdir($this->basePath.'/app/Jobs');
+        rmdir($this->basePath.'/app');
+    }
+
+    public function test_with_jobs_preserves_runtime_validation_for_malformed_configuration(): void
+    {
+        mkdir($this->basePath.'/app/Jobs', 0777, true);
+        file_put_contents($this->basePath.'/config/runtime.php', '<?php return ["modules" => "invalid"];');
+
+        try {
+            Application::configure($this->basePath)->withJobs('app/Jobs')->create();
+            self::fail('Expected malformed runtime modules to be rejected.');
+        } catch (\InvalidArgumentException $exception) {
+            self::assertSame('The runtime modules configuration must be an array.', $exception->getMessage());
+        } finally {
+            unlink($this->basePath.'/config/runtime.php');
             rmdir($this->basePath.'/app/Jobs');
             rmdir($this->basePath.'/app');
         }

@@ -69,6 +69,20 @@ class ApplicationBuilder
         $container = new Container;
         $router = new Router;
         $values = $this->loadConfig();
+        if ($this->jobs !== []) {
+            if (! array_key_exists('runtime', $values)) {
+                $values['runtime'] = [];
+            }
+            if (is_array($values['runtime'])) {
+                if (! array_key_exists('modules', $values['runtime'])) {
+                    $values['runtime']['modules'] = ['http'];
+                }
+                if (is_array($values['runtime']['modules'])
+                    && ! in_array('capabilities.jobs', $values['runtime']['modules'], true)) {
+                    $values['runtime']['modules'][] = 'capabilities.jobs';
+                }
+            }
+        }
         $config = new Repository($values);
         $runtimeConfiguration = RuntimeConfiguration::fromArray($values);
         $runtimeModules = RuntimeModuleFactory::fromConfiguration($runtimeConfiguration);
