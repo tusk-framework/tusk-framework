@@ -55,7 +55,7 @@ class ProjectGeneratorTest extends TestCase
         self::assertStringContainsString("->withJobs(__DIR__.'/../app/Jobs')", file_get_contents($root.'/bootstrap/app.php'));
         self::assertStringContainsString('capabilities.jobs', file_get_contents($root.'/config/runtime.php'));
         self::assertStringContainsString("AsJob('welcome.email')", file_get_contents($root.'/app/Jobs/WelcomeJob.php'));
-        self::assertStringContainsString("json_encode(['user_id' => $userId], JSON_THROW_ON_ERROR)", file_get_contents($root.'/app/Jobs/dispatch-example.php'));
+        self::assertStringContainsString("json_encode(['user_id' => \$userId], JSON_THROW_ON_ERROR)", file_get_contents($root.'/app/Jobs/dispatch-example.php'));
         self::assertStringContainsString("'max_attempts' => 3", file_get_contents($root.'/config/runtime.php'));
         self::assertStringContainsString("'modules' => ['http', 'capabilities.jobs']", file_get_contents($root.'/config/runtime.php'));
 

@@ -21,13 +21,16 @@ final class JobRetryConfigurationTest extends TestCase
 
     public function test_invalid_values_are_rejected(): void
     {
+        $assertions = 0;
         foreach ([['max_attempts' => 0], ['max_attempts' => -1], ['delay_seconds' => -1], ['max_attempts' => '3'], ['delay_seconds' => '1']] as $values) {
             try {
                 JobRetryConfiguration::fromArray($values);
                 self::fail('Expected invalid retry configuration.');
             } catch (InvalidArgumentException) {
                 // Expected.
+                $assertions++;
             }
         }
+        self::assertSame(5, $assertions);
     }
 }

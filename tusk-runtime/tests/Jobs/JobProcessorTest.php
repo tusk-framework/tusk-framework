@@ -15,6 +15,7 @@ use Tusk\Runtime\Jobs\JobAttemptException;
 use Tusk\Runtime\Jobs\JobHandlerRegistry;
 use Tusk\Runtime\Jobs\JobProcessor;
 use Tusk\Runtime\Jobs\JobRetryConfiguration;
+use Tusk\Runtime\RoadRunner\RoadRunnerJobMessage;
 
 final class JobProcessorTest extends TestCase
 {
@@ -75,7 +76,12 @@ final class JobProcessorTest extends TestCase
         $ackTask = new ProcessorTask;
         $ackTask->transportFailure = 'ack';
         $ackTask->transportException = $ackFailure;
-        $this->expectExceptionIdentity($ackFailure, fn () => $this->processor(new ProcessorHandler($events), $this->lifecycle($events))->process($ackTask));
+        try {
+            $this->processor(new ProcessorHandler($events), $this->lifecycle($events))->process($ackTask);
+            self::fail('Expected acknowledgement transport failure.');
+        } catch (RuntimeException $exception) {
+            self::assertSame($ackFailure, $exception);
+        }
         self::assertSame([], $ackTask->events);
 
         foreach ([['retry', 1], ['fail', 3]] as [$operation, $attempt]) {
@@ -85,7 +91,12 @@ final class JobProcessorTest extends TestCase
             $task = new ProcessorTask(attempt: $attempt);
             $task->transportFailure = $operation;
             $task->transportException = $transportFailure;
-            $this->expectExceptionIdentity($transportFailure, fn () => $this->processor(new ProcessorHandler($events, $handlerFailure), $this->lifecycle($events))->process($task));
+            try {
+                $this->processor(new ProcessorHandler($events, $handlerFailure), $this->lifecycle($events))->process($task);
+                self::fail('Expected disposition transport failure.');
+            } catch (RuntimeException $exception) {
+                self::assertSame($transportFailure, $exception);
+            }
             self::assertSame([], $task->events);
             self::assertSame(['start', 'handle', 'end'], $events);
         }
@@ -145,14 +156,16 @@ final class JobProcessorTest extends TestCase
         foreach ([['retry', 1], ['fail', 3]] as [$operation, $attempt]) {
             $events = [];
             $handlerFailure = new RuntimeException('handler');
+            $transportFailure = new RuntimeException($operation.' transport');
             $cleanupFailure = new RuntimeException('cleanup');
             $task = new ProcessorTask(attempt: $attempt);
             $task->transportFailure = $operation;
+            $task->transportException = $transportFailure;
             try {
                 $this->processor(new ProcessorHandler($events, $handlerFailure), $this->lifecycle($events, false, $cleanupFailure))->process($task);
                 self::fail('Expected handler failure.');
             } catch (RuntimeException $exception) {
-                self::assertSame($handlerFailure, $exception);
+                self::assertSame($transportFailure, $exception);
             }
             self::assertSame(1, $task->dispositionCalls);
             self::assertSame([], $task->events);
@@ -167,10 +180,15 @@ final class JobProcessorTest extends TestCase
         $task = new ProcessorTask;
         $task->transportFailure = 'retry';
         $task->transportException = $transportFailure;
-        $this->expectExceptionIdentity($transportFailure, fn () => $this->processor(
-            new ProcessorHandler($events, new RuntimeException('handler')),
-            $this->lifecycle($events, false, new RuntimeException('cleanup')),
-        )->process($task));
+        try {
+            $this->processor(
+                new ProcessorHandler($events, new RuntimeException('handler')),
+                $this->lifecycle($events, false, new RuntimeException('cleanup')),
+            )->process($task);
+            self::fail('Expected retry transport failure.');
+        } catch (RuntimeException $exception) {
+            self::assertSame($transportFailure, $exception);
+        }
 
         self::assertSame(1, $task->dispositionCalls);
         self::assertSame([], $task->events);
@@ -184,10 +202,15 @@ final class JobProcessorTest extends TestCase
         $task = new ProcessorTask(attempt: 3);
         $task->transportFailure = 'fail';
         $task->transportException = $transportFailure;
-        $this->expectExceptionIdentity($transportFailure, fn () => $this->processor(
-            new ProcessorHandler($events, new RuntimeException('handler')),
-            $this->lifecycle($events, false, new RuntimeException('cleanup')),
-        )->process($task));
+        try {
+            $this->processor(
+                new ProcessorHandler($events, new RuntimeException('handler')),
+                $this->lifecycle($events, false, new RuntimeException('cleanup')),
+            )->process($task);
+            self::fail('Expected terminal failure transport exception.');
+        } catch (RuntimeException $exception) {
+            self::assertSame($transportFailure, $exception);
+        }
 
         self::assertSame(1, $task->dispositionCalls);
         self::assertSame([], $task->events);
@@ -225,29 +248,27 @@ final class JobProcessorTest extends TestCase
     {
         $container = new Container;
         $container->instance(ProcessorHandler::class, $handler);
+
         return new JobProcessor($container, new JobHandlerRegistry(['welcome' => ProcessorHandler::class]), $lifecycle, JobRetryConfiguration::fromArray([]));
     }
 
     private function lifecycle(array &$events, bool $rethrow = false, ?Throwable $cleanupFailure = null): LifecycleManagerInterface
     {
         $lifecycle = $this->createMock(LifecycleManagerInterface::class);
-        $lifecycle->method('jobStart')->willReturnCallback(static function (JobContext $context) use (&$events): void { $events[] = 'start'; });
+        $lifecycle->method('jobStart')->willReturnCallback(static function (JobContext $context) use (&$events): void {
+            $events[] = 'start';
+        });
         $lifecycle->method('jobEnd')->willReturnCallback(static function (?Throwable $error) use (&$events, $rethrow, $cleanupFailure): void {
             $events[] = 'end';
-            if ($cleanupFailure !== null) { throw $cleanupFailure; }
-            if ($rethrow && $error !== null) { throw $error; }
+            if ($cleanupFailure !== null) {
+                throw $cleanupFailure;
+            }
+            if ($rethrow && $error !== null) {
+                throw $error;
+            }
         });
-        return $lifecycle;
-    }
 
-    private function expectExceptionIdentity(Throwable $expected, callable $callback): void
-    {
-        try {
-            $callback();
-            self::fail('Expected failure.');
-        } catch (Throwable $exception) {
-            self::assertSame($expected, $exception);
-        }
+        return $lifecycle;
     }
 }
 
@@ -261,15 +282,20 @@ final class ProcessorHandler implements JobHandlerInterface
     {
         $this->events[] = 'handle';
         $this->context = $job;
-        if ($this->failure !== null) { throw $this->failure; }
+        if ($this->failure !== null) {
+            throw $this->failure;
+        }
     }
 }
 
 final class ProcessorTask implements JobTaskInterface
 {
     public array $events = [];
+
     public int $dispositionCalls = 0;
+
     public ?string $transportFailure = null;
+
     public ?Throwable $transportException = null;
 
     private array $sharedEvents = [];
@@ -278,27 +304,41 @@ final class ProcessorTask implements JobTaskInterface
 
     public function shareEventsWith(array &$events): void
     {
-        $this->sharedEvents =& $events;
+        $this->sharedEvents = &$events;
     }
 
     public function message(): QueueMessageInterface
     {
-        return new \Tusk\Runtime\RoadRunner\RoadRunnerJobMessage('job-1', 'emails', $this->name, $this->payload, ['x-trace' => 'abc']);
+        return new RoadRunnerJobMessage('job-1', 'emails', $this->name, $this->payload, ['x-trace' => 'abc']);
     }
 
     public function attempt(): int
     {
-        if ($this->attemptError) { throw new JobAttemptException('Invalid attempt.'); }
+        if ($this->attemptError) {
+            throw new JobAttemptException('Invalid attempt.');
+        }
+
         return $this->attempt;
     }
 
-    public function acknowledge(): void { $this->record('ack'); }
-    public function retry(?int $delaySeconds = null): void { $this->record('retry:'.$delaySeconds); }
-    public function fail(string $reason): void { $this->record('fail:'.$reason); }
+    public function acknowledge(): void
+    {
+        $this->record('ack');
+    }
+
+    public function retry(?int $delaySeconds = null): void
+    {
+        $this->record('retry:'.$delaySeconds);
+    }
+
+    public function fail(string $reason): void
+    {
+        $this->record('fail:'.$reason);
+    }
 
     private function record(string $operation): void
     {
-        ++$this->dispositionCalls;
+        $this->dispositionCalls++;
         if ($this->transportFailure !== null && str_starts_with($operation, $this->transportFailure)) {
             throw $this->transportException ?? new RuntimeException('transport');
         }

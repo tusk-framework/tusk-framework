@@ -27,7 +27,6 @@ final class JobProcessor
         $context = new JobContext($message->id(), $message->queue(), $message->name(), $message->payload(), $message->headers());
         $jobError = null;
         $failure = null;
-        $dispositionSucceeded = false;
         $attempt = null;
 
         try {
@@ -55,14 +54,13 @@ final class JobProcessor
                 $task->retry($this->retry->delaySeconds());
                 $this->logSafely('Job retry scheduled.');
             }
-            $dispositionSucceeded = true;
         } catch (Throwable $exception) {
-            $failure = $jobError ?? $exception;
+            $failure = $exception;
         } finally {
             try {
                 $this->lifecycle->jobEnd($jobError ?? $failure);
             } catch (Throwable $cleanupException) {
-                if ($failure === null && ! ($jobError !== null && $dispositionSucceeded && $cleanupException === $jobError)) {
+                if ($failure === null && ! ($jobError !== null && $cleanupException === $jobError)) {
                     $failure = $jobError ?? $cleanupException;
                 }
             }

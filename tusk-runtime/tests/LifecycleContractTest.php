@@ -34,6 +34,8 @@ final class LifecycleContractTest extends TestCase
                 'workerStart',
                 'requestStart',
                 'requestEnd',
+                'jobStart',
+                'jobEnd',
                 'workerStop',
                 'applicationStop',
                 'wrap',

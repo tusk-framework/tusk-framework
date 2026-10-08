@@ -50,6 +50,7 @@ final class RoadRunnerJobTaskTest extends TestCase
 
     public function test_malformed_attempt_is_rejected(): void
     {
+        $assertions = 0;
         foreach (['0', '-1', '2x', '', '999999999999999999999999999999'] as $value) {
             $adapter = new RoadRunnerJobTask(new RecordingReceivedTask(['x-tusk-attempt' => [$value]]));
             try {
@@ -57,8 +58,10 @@ final class RoadRunnerJobTaskTest extends TestCase
                 self::fail('Expected invalid attempt.');
             } catch (JobAttemptException) {
                 // Expected.
+                $assertions++;
             }
         }
+        self::assertSame(5, $assertions);
         foreach ([[], ['2', '3']] as $values) {
             $adapter = new RoadRunnerJobTask(new RecordingReceivedTask(['x-tusk-attempt' => $values]));
             $this->expectInvalidAttempt($adapter);
@@ -143,6 +146,7 @@ final class RecordingReceivedTask implements ReceivedTaskInterface
                 return true;
             }
         }
+
         return false;
     }
 
@@ -153,6 +157,7 @@ final class RecordingReceivedTask implements ReceivedTaskInterface
                 return $values;
             }
         }
+
         return [];
     }
 
@@ -195,6 +200,7 @@ final class RecordingReceivedTask implements ReceivedTaskInterface
         $this->recorder->events[] = 'header:'.$name.':'.(is_string($value) ? $value : implode(',', (array) $value));
         $copy = clone $this;
         $copy->headers[$name] = is_string($value) ? [$value] : (array) $value;
+
         return $copy;
     }
 
@@ -211,6 +217,7 @@ final class RecordingReceivedTask implements ReceivedTaskInterface
                 unset($copy->headers[$headerName]);
             }
         }
+
         return $copy;
     }
 }
@@ -219,5 +226,6 @@ final class TaskOperationRecorder
 {
     /** @var list<string> */
     public array $events = [];
+
     public ?int $delay = null;
 }

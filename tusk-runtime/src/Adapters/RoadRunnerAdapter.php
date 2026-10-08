@@ -12,8 +12,8 @@ use Spiral\RoadRunner\WorkerInterface;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
 use Tusk\Runtime\Modules\RoadRunnerHttpModule;
-use Tusk\Runtime\RoadRunner\RoadRunnerJobTask;
 use Tusk\Runtime\RoadRunner\RoadRunnerJobsModule;
+use Tusk\Runtime\RoadRunner\RoadRunnerJobTask;
 
 final class RoadRunnerAdapter implements RuntimeAdapterInterface
 {
@@ -73,7 +73,11 @@ final class RoadRunnerAdapter implements RuntimeAdapterInterface
             if (! $module instanceof RoadRunnerJobsModule) {
                 throw new \LogicException('RoadRunner Jobs module is not registered in the application container.');
             }
-            while ($this->running && ($task = $this->consumer->waitTask()) !== null) {
+            while (true) {
+                $task = $this->consumer->waitTask();
+                if ($task === null) {
+                    break;
+                }
                 $module->handle(new RoadRunnerJobTask($task));
                 gc_collect_cycles();
             }

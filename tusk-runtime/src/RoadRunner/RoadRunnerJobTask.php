@@ -31,7 +31,7 @@ final class RoadRunnerJobTask implements JobTaskInterface
         if (! $present) {
             return 1;
         }
-        if (count($values) !== 1 || ! is_string($values[0]) || ! preg_match('/^[0-9]+$/D', $values[0])) {
+        if (count($values) !== 1 || ! preg_match('/^[0-9]+$/D', $values[0])) {
             throw new JobAttemptException('Invalid internal job attempt header.');
         }
         $number = ltrim($values[0], '0');
@@ -39,6 +39,7 @@ final class RoadRunnerJobTask implements JobTaskInterface
         if ($number === '' || strlen($number) > strlen($maximum) || (strlen($number) === strlen($maximum) && strcmp($number, $maximum) > 0)) {
             throw new JobAttemptException('Invalid internal job attempt header.');
         }
+
         return (int) $number;
     }
 

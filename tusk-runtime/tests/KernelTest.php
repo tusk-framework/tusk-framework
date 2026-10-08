@@ -3,16 +3,21 @@
 namespace Tusk\Runtime\Tests;
 
 use PHPUnit\Framework\TestCase;
+use Spiral\RoadRunner\Jobs\ConsumerInterface;
+use Spiral\RoadRunner\Jobs\Queue\Driver;
+use Spiral\RoadRunner\Jobs\Task\ReceivedTaskInterface;
+use Spiral\RoadRunner\Jobs\Task\WritableHeadersInterface;
+use Spiral\RoadRunner\WorkerInterface;
 use Tusk\Contracts\Container\ContainerInterface;
+use Tusk\Contracts\Runtime\Jobs\JobContext;
+use Tusk\Contracts\Runtime\Jobs\JobHandlerInterface;
 use Tusk\Contracts\Runtime\LifecycleManagerInterface;
 use Tusk\Contracts\Runtime\Modules\RuntimeModuleInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
-use Tusk\Runtime\Kernel;
+use Tusk\Runtime\Adapters\RoadRunnerAdapter;
 use Tusk\Runtime\Jobs\JobHandlerRegistry;
+use Tusk\Runtime\Kernel;
 use Tusk\Runtime\Modules\RuntimeModuleRegistry;
-use Spiral\RoadRunner\Jobs\ConsumerInterface;
-use Spiral\RoadRunner\Jobs\Task\ReceivedTaskInterface;
-use Spiral\RoadRunner\WorkerInterface;
 
 final class KernelTestContainer implements ContainerInterface
 {
@@ -69,7 +74,7 @@ final class KernelTestLifecycleManager implements LifecycleManagerInterface
         $this->events[] = 'request.end';
     }
 
-    public function jobStart(\Tusk\Contracts\Runtime\Jobs\JobContext $job): void
+    public function jobStart(JobContext $job): void
     {
         $this->events[] = 'job.start';
     }
@@ -149,9 +154,9 @@ final class KernelTestRuntimeModule implements RuntimeModuleInterface
     }
 }
 
-final class KernelTestJobHandler implements \Tusk\Contracts\Runtime\Jobs\JobHandlerInterface
+final class KernelTestJobHandler implements JobHandlerInterface
 {
-    public function handle(\Tusk\Contracts\Runtime\Jobs\JobContext $job): void {}
+    public function handle(JobContext $job): void {}
 }
 
 final class KernelTest extends TestCase
@@ -232,17 +237,119 @@ final class KernelTest extends TestCase
     public function test_jobs_mode_shares_kernel_lifecycle_and_does_not_wrap_tasks_as_requests(): void
     {
         $events = [];
-        $task = $this->createMock(ReceivedTaskInterface::class);
-        $task->method('getId')->willReturn('job-1');
-        $task->method('getPipeline')->willReturn('default');
-        $task->method('getName')->willReturn('test.job');
-        $task->method('getPayload')->willReturn('{"ok":true}');
-        $task->method('getHeaders')->willReturn([]);
-        $task->expects(self::once())->method('ack');
-        $container = new class($events) implements ContainerInterface {
+        $task = new class implements ReceivedTaskInterface
+        {
+            public bool $acked = false;
+
+            public function getId(): string
+            {
+                return 'job-1';
+            }
+
+            public function getPipeline(): string
+            {
+                return 'default';
+            }
+
+            public function getName(): string
+            {
+                return 'test.job';
+            }
+
+            public function getPayload(): string
+            {
+                return '{"ok":true}';
+            }
+
+            public function getHeaders(): array
+            {
+                return [];
+            }
+
+            public function hasHeader(string $name): bool
+            {
+                return false;
+            }
+
+            public function getHeader(string $name): array
+            {
+                return [];
+            }
+
+            public function getHeaderLine(string $name): string
+            {
+                return '';
+            }
+
+            public function withHeader(string $name, string|iterable $value): WritableHeadersInterface
+            {
+                return $this;
+            }
+
+            public function withAddedHeader(string $name, string|iterable $value): WritableHeadersInterface
+            {
+                return $this;
+            }
+
+            public function withoutHeader(string $name): WritableHeadersInterface
+            {
+                return $this;
+            }
+
+            public function withDelay(int $delay): self
+            {
+                return $this;
+            }
+
+            public function ack(): void
+            {
+                $this->acked = true;
+            }
+
+            public function nack(string|\Stringable|\Throwable $message, bool $redelivery = false): void {}
+
+            public function requeue(string|\Stringable|\Throwable $message): void {}
+
+            public function complete(): void {}
+
+            public function fail(string|\Stringable|\Throwable $error, bool $requeue = false): void {}
+
+            public function isCompleted(): bool
+            {
+                return $this->acked;
+            }
+
+            public function isSuccessful(): bool
+            {
+                return $this->acked;
+            }
+
+            public function isFails(): bool
+            {
+                return false;
+            }
+
+            public function getQueue(): string
+            {
+                return 'default';
+            }
+
+            public function getDriver(): Driver
+            {
+                return Driver::Memory;
+            }
+        };
+        $container = new class($events) implements ContainerInterface
+        {
             private array $instances = [];
+
             public function __construct(private array &$events) {}
-            public function instance(string $id, object $instance): void { $this->instances[$id] = $instance; }
+
+            public function instance(string $id, object $instance): void
+            {
+                $this->instances[$id] = $instance;
+            }
+
             public function get(string $id): object
             {
                 if ($id === JobHandlerRegistry::class) {
@@ -250,6 +357,7 @@ final class KernelTest extends TestCase
                 }
                 if ($id === KernelTestJobHandler::class) {
                     $this->events[] = 'handle';
+
                     return new KernelTestJobHandler;
                 }
                 if (isset($this->instances[$id])) {
@@ -257,34 +365,53 @@ final class KernelTest extends TestCase
                 }
                 throw new \RuntimeException('Unexpected container resolution: '.$id);
             }
-            public function has(string $id): bool { return isset($this->instances[$id]); }
+
+            public function has(string $id): bool
+            {
+                return isset($this->instances[$id]);
+            }
+
             public function runHooks(string $attributeClass): void {}
-            public function runLifecycleHooks(string $event): void { $this->events[] = $event; }
+
+            public function runLifecycleHooks(string $event): void
+            {
+                $this->events[] = $event;
+            }
+
             public function resetScope(string $scope): void {}
         };
         $lifecycle = new KernelTestLifecycleManager;
-        $consumer = new class($events, $task) implements ConsumerInterface {
+        $consumer = new class($events, $task) implements ConsumerInterface
+        {
             private bool $delivered = false;
+
             public function __construct(private array &$events, private ReceivedTaskInterface $task) {}
+
             public function waitTask(): ?ReceivedTaskInterface
             {
                 $this->events[] = 'wait';
-                if ($this->delivered) { return null; }
+                if ($this->delivered) {
+                    return null;
+                }
                 $this->delivered = true;
+
                 return $this->task;
             }
         };
         $worker = $this->createMock(WorkerInterface::class);
-        $adapter = new \Tusk\Runtime\Adapters\RoadRunnerAdapter(
+        $adapter = new RoadRunnerAdapter(
             mode: 'jobs',
             consumerFactory: static fn (WorkerInterface $worker) => $consumer,
             workerFactory: static fn () => $worker,
         );
         $kernel = new Kernel($container, $adapter, $lifecycle);
 
-        $kernel->run(static function (): void { throw new \LogicException('HTTP handler must not run in Jobs mode.'); });
+        $kernel->run(static function (): void {
+            throw new \LogicException('HTTP handler must not run in Jobs mode.');
+        });
 
         self::assertSame(['wait', 'handle', 'wait'], $events);
+        self::assertTrue($task->acked);
         self::assertSame(['application.start', 'worker.start', 'job.start', 'job.end', 'worker.stop', 'application.stop'], $lifecycle->events);
     }
 }
