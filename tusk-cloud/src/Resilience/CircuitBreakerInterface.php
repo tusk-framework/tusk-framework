@@ -1,19 +1,23 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tusk\Cloud\Resilience;
+
+use Tusk\Contracts\Cloud\Resilience\FailureClassifierInterface;
+use Tusk\Contracts\Cloud\Resilience\OperationContext;
 
 interface CircuitBreakerInterface
 {
-    /**
-     * Executes the given callback protected by the circuit breaker.
-     *
-     * @param  callable  $action  The operation to execute
-     * @param  callable|null  $fallback  Function to call if the operation fails or circuit is open
-     */
-    public function execute(callable $action, ?callable $fallback = null): mixed;
+    public function execute(
+        callable $operation,
+        OperationContext $context,
+        CircuitBreakerPolicy $policy,
+        ?FailureClassifierInterface $classifier = null,
+    ): mixed;
 
-    /**
-     * Returns the current state of the circuit.
-     */
-    public function getState(): State;
+    public function state(): State;
+
+    /** @return array{state: string, failureCount: int, openedAtMilliseconds: int|null, halfOpenProbeCount: int, halfOpenGeneration: string} */
+    public function snapshot(): array;
 }

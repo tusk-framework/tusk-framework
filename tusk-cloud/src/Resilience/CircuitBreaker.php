@@ -1,122 +1,244 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tusk\Cloud\Resilience;
 
+use InvalidArgumentException;
+use Throwable;
 use Tusk\Cloud\Resilience\Exception\CircuitOpenException;
+use Tusk\Contracts\Cloud\Resilience\ClockInterface;
+use Tusk\Contracts\Cloud\Resilience\FailureClassifierInterface;
+use Tusk\Contracts\Cloud\Resilience\OperationContext;
 use Tusk\Contracts\Cloud\Resilience\StateStoreInterface;
 
-class CircuitBreaker implements CircuitBreakerInterface
+final class CircuitBreaker implements CircuitBreakerInterface
 {
-    private string $key;
+    private readonly string $key;
+
+    private readonly string $generationNamespace;
+
+    private int $generationFloor = 0;
+
+    private int $activeProbeCount = 0;
 
     public function __construct(
-        private StateStoreInterface $store,
-        private string $name = 'default',
-        private int $failureThreshold = 5,
-        private float $resetTimeout = 10.0 // Seconds before Half-Open
+        private readonly StateStoreInterface $store,
+        private readonly ClockInterface $clock,
+        string $name,
     ) {
+        $name = trim($name);
+        if ($name === '') {
+            throw new InvalidArgumentException('Circuit name cannot be blank.');
+        }
+
         $this->key = "cb:{$name}";
+        $this->generationNamespace = bin2hex(random_bytes(16));
     }
 
-    public function execute(callable $action, ?callable $fallback = null): mixed
-    {
-        $data = $this->loadState();
-        $state = $data['state'];
+    public function execute(
+        callable $operation,
+        OperationContext $context,
+        CircuitBreakerPolicy $policy,
+        ?FailureClassifierInterface $classifier = null,
+    ): mixed {
+        $snapshot = $this->snapshot();
+        $probe = false;
+        $admissionGeneration = $snapshot['halfOpenGeneration'];
 
-        if ($state === State::OPEN) {
-            if ($this->shouldAttemptReset($data['lastFailureTime'])) {
-                $this->transitionTo(State::HALF_OPEN);
-                $data = $this->loadState(); // Refresh after transition
-                $state = $data['state'];
-            } else {
-                return $this->handleFailure(new CircuitOpenException, $fallback);
+        if ($snapshot['state'] === State::OPEN->value) {
+            $openedAt = $snapshot['openedAtMilliseconds'];
+            $now = $this->clock->nowMilliseconds();
+            if ($now < $openedAt || $now - $openedAt < $policy->openDurationMilliseconds()) {
+                throw new CircuitOpenException;
             }
+            if ($this->generationFloor === PHP_INT_MAX) {
+                throw new CircuitOpenException('Circuit probe generation is exhausted.');
+            }
+
+            $snapshot['state'] = State::HALF_OPEN->value;
+            $snapshot['halfOpenProbeCount'] = 0;
+            $snapshot['halfOpenGeneration'] = $this->nextGeneration();
+        }
+
+        if ($snapshot['state'] === State::HALF_OPEN->value) {
+            if ($snapshot['halfOpenProbeCount'] >= $policy->halfOpenProbeLimit()) {
+                if ($this->activeProbeCount > 0) {
+                    throw new CircuitOpenException;
+                }
+
+                // A prior process-local probe may have completed while its
+                // state-store writes failed. Rotate the generation only when
+                // this breaker has no live probe, making abandoned tickets
+                // recoverable without admitting beyond the configured limit.
+                $snapshot['halfOpenProbeCount'] = 0;
+                $snapshot['halfOpenGeneration'] = $this->nextGeneration();
+            }
+
+            // Reserve before calling user code. The in-memory store provides
+            // process-local admission; distributed atomicity needs a store adapter.
+            $snapshot['halfOpenProbeCount']++;
+            $this->saveSnapshot($snapshot);
+            $probe = true;
+            $this->activeProbeCount++;
+            $admissionGeneration = $snapshot['halfOpenGeneration'];
         }
 
         try {
-            $result = $action();
-
-            if ($state === State::HALF_OPEN) {
-                $this->reset();
+            $result = $operation($context);
+        } catch (Throwable $failure) {
+            $mayReopenProbe = false;
+            try {
+                $current = $this->snapshot();
+                $mayReopenProbe = $probe
+                    && $current['halfOpenGeneration'] === $admissionGeneration
+                    && in_array($current['state'], [State::HALF_OPEN->value, State::CLOSED->value], true);
+                $decision = ($classifier ?? new DefaultFailureClassifier)->classify($failure, $context);
+                if (! $decision->countsAsCircuitFailure() && $probe
+                    && $current['state'] === State::HALF_OPEN->value
+                    && $current['halfOpenGeneration'] === $admissionGeneration) {
+                    $current['halfOpenProbeCount'] = max(0, $current['halfOpenProbeCount'] - 1);
+                    $this->saveSnapshot($current);
+                } elseif ($decision->countsAsCircuitFailure() && $probe && $current['halfOpenGeneration'] === $admissionGeneration
+                    && in_array($current['state'], [State::HALF_OPEN->value, State::CLOSED->value], true)) {
+                    // A failed in-flight probe wins over an earlier successful
+                    // probe from the same half-open admission round.
+                    $this->saveSnapshot($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration));
+                } elseif ($decision->countsAsCircuitFailure() && ! $probe && $current['state'] === State::CLOSED->value) {
+                    $current['failureCount']++;
+                    if ($current['failureCount'] >= $policy->failureThreshold()) {
+                        $current = $this->openSnapshot($policy, $this->clock->nowMilliseconds(), $current['halfOpenGeneration']);
+                    }
+                    $this->saveSnapshot($current);
+                }
+            } catch (Throwable) {
+                if ($mayReopenProbe) {
+                    try {
+                        $this->saveSnapshot($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration));
+                    } catch (Throwable) {
+                        // Accounting infrastructure must never replace the operation failure.
+                    }
+                }
             }
 
-            return $result;
-        } catch (\Throwable $e) {
-            $this->recordFailure();
+            if ($probe) {
+                $this->activeProbeCount--;
+            }
 
-            return $this->handleFailure($e, $fallback);
+            throw $failure;
         }
+
+        if ($probe) {
+            $this->activeProbeCount--;
+        }
+
+        $mayReopenProbe = false;
+        try {
+            $current = $this->snapshot();
+            $mayReopenProbe = $probe
+                && $current['state'] === State::HALF_OPEN->value
+                && $current['halfOpenGeneration'] === $admissionGeneration;
+            if ($probe && $current['state'] === State::HALF_OPEN->value && $current['halfOpenGeneration'] === $admissionGeneration) {
+                $this->saveSnapshot($this->closedSnapshot($admissionGeneration));
+            } elseif (! $probe && $current['state'] === State::CLOSED->value) {
+                // This policy counts consecutive failed logical operations.
+                // Rolling-window accounting is deferred to a future policy/store.
+                $current['failureCount'] = 0;
+                $this->saveSnapshot($current);
+            }
+        } catch (Throwable) {
+            if ($mayReopenProbe) {
+                // If a successful probe cannot close the circuit, best-effort
+                // reopen it so a transient store failure cannot strand a full
+                // half-open probe budget indefinitely.
+                try {
+                    $this->saveSnapshot($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration));
+                } catch (Throwable) {
+                    // Preserve the already successful operation result.
+                }
+            }
+        }
+
+        return $result;
     }
 
-    private function loadState(): array
+    public function state(): State
     {
-        return $this->store->get($this->key) ?: [
-            'state' => State::CLOSED,
-            'failureCount' => 0,
-            'lastFailureTime' => null,
+        return State::from($this->snapshot()['state']);
+    }
+
+    /**
+     * @return array{state: string, failureCount: int, openedAtMilliseconds: int|null, halfOpenProbeCount: int, halfOpenGeneration: string}
+     */
+    public function snapshot(): array
+    {
+        $data = $this->store->get($this->key);
+        if ($data === null || ! $this->validSnapshot($data)) {
+            return $this->closedSnapshot();
+        }
+
+        [$namespace, $counter] = explode(':', $data['halfOpenGeneration'], 2);
+        if ($namespace === $this->generationNamespace) {
+            $this->generationFloor = max($this->generationFloor, (int) $counter);
+        }
+
+        return [
+            'state' => $data['state'],
+            'failureCount' => $data['failureCount'],
+            'openedAtMilliseconds' => $data['openedAtMilliseconds'],
+            'halfOpenProbeCount' => $data['halfOpenProbeCount'],
+            'halfOpenGeneration' => $data['halfOpenGeneration'],
         ];
     }
 
-    private function saveState(array $data): void
+    /** @param array<string, mixed> $data */
+    private function validSnapshot(array $data): bool
     {
-        $this->store->set($this->key, $data);
-    }
-
-    public function getState(): State
-    {
-        return $this->loadState()['state'];
-    }
-
-    private function block(): void
-    {
-        $this->saveState([
-            'state' => State::OPEN,
-            'failureCount' => $this->failureThreshold,
-            'lastFailureTime' => microtime(true),
-        ]);
-    }
-
-    private function reset(): void
-    {
-        $this->saveState([
-            'state' => State::CLOSED,
-            'failureCount' => 0,
-            'lastFailureTime' => null,
-        ]);
-    }
-
-    private function transitionTo(State $state): void
-    {
-        $data = $this->loadState();
-        $data['state'] = $state;
-        $this->saveState($data);
-    }
-
-    private function recordFailure(): void
-    {
-        $data = $this->loadState();
-        $data['failureCount']++;
-        if ($data['failureCount'] >= $this->failureThreshold) {
-            $this->block();
-        } else {
-            $this->saveState($data);
-        }
-    }
-
-    private function shouldAttemptReset(?float $lastFailureTime): bool
-    {
-        if ($lastFailureTime === null) {
+        if (! isset($data['state'], $data['failureCount'], $data['halfOpenProbeCount'], $data['halfOpenGeneration'])
+            || ! array_key_exists('openedAtMilliseconds', $data)
+            || ! is_string($data['state'])
+            || ! in_array($data['state'], [State::CLOSED->value, State::OPEN->value, State::HALF_OPEN->value], true)
+            || ! is_int($data['failureCount']) || $data['failureCount'] < 0
+            || ! is_int($data['halfOpenProbeCount']) || $data['halfOpenProbeCount'] < 0
+            || ! is_string($data['halfOpenGeneration'])
+            || ! preg_match('/\A[0-9a-f]{32}:(0|[1-9][0-9]*)\z/D', $data['halfOpenGeneration'], $matches)
+            || filter_var($matches[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false
+        ) {
             return false;
         }
 
-        return (microtime(true) - $lastFailureTime) > $this->resetTimeout;
+        if ($data['state'] === State::CLOSED->value) {
+            return $data['openedAtMilliseconds'] === null && $data['halfOpenProbeCount'] === 0;
+        }
+
+        return is_int($data['openedAtMilliseconds']) && $data['openedAtMilliseconds'] >= 0
+            && ($data['state'] !== State::OPEN->value || $data['halfOpenProbeCount'] === 0);
     }
 
-    private function handleFailure(\Throwable $e, ?callable $fallback): mixed
+    /**
+     * @return array{state: string, failureCount: int, openedAtMilliseconds: null, halfOpenProbeCount: int, halfOpenGeneration: string}
+     */
+    private function closedSnapshot(?string $generation = null): array
     {
-        if ($fallback) {
-            return $fallback($e);
-        }
-        throw $e;
+        return ['state' => State::CLOSED->value, 'failureCount' => 0, 'openedAtMilliseconds' => null, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $generation ?? "{$this->generationNamespace}:0"];
+    }
+
+    /**
+     * @return array{state: string, failureCount: int, openedAtMilliseconds: int, halfOpenProbeCount: int, halfOpenGeneration: string}
+     */
+    private function openSnapshot(CircuitBreakerPolicy $policy, int $now, string $generation): array
+    {
+        return ['state' => State::OPEN->value, 'failureCount' => $policy->failureThreshold(), 'openedAtMilliseconds' => $now, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $generation];
+    }
+
+    private function nextGeneration(): string
+    {
+        return "{$this->generationNamespace}:".(++$this->generationFloor);
+    }
+
+    /** @param array{state: string, failureCount: int, openedAtMilliseconds: int|null, halfOpenProbeCount: int, halfOpenGeneration: string} $snapshot */
+    private function saveSnapshot(array $snapshot): void
+    {
+        $this->store->set($this->key, $snapshot);
     }
 }
