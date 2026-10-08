@@ -5,24 +5,134 @@ declare(strict_types=1);
 namespace Tusk\Cloud\Tests\Resilience;
 
 use LogicException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use RuntimeException;
 use Tusk\Cloud\Resilience\Backoff\FixedBackoff;
 use Tusk\Cloud\Resilience\BulkheadPolicy;
 use Tusk\Cloud\Resilience\CircuitBreakerPolicy;
+use Tusk\Cloud\Resilience\Event\CircuitStateChanged;
+use Tusk\Cloud\Resilience\Event\RetryScheduled;
 use Tusk\Cloud\Resilience\Exception\CircuitOpenException;
 use Tusk\Cloud\Resilience\Exception\ResilienceFallbackException;
 use Tusk\Cloud\Resilience\InMemoryStateStore;
 use Tusk\Cloud\Resilience\RateLimitPolicy;
+use Tusk\Cloud\Resilience\ResilienceInstrumentation;
 use Tusk\Cloud\Resilience\ResiliencePipelineFactory;
 use Tusk\Cloud\Resilience\RetryPolicy;
+use Tusk\Cloud\Resilience\State;
 use Tusk\Cloud\Resilience\Testing\FakeClock;
 use Tusk\Contracts\Cloud\Resilience\FailureClassifierInterface;
 use Tusk\Contracts\Cloud\Resilience\FailureDecision;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
+use Tusk\Contracts\Events\EventDispatcherInterface;
+use Tusk\Contracts\Observability\TelemetryProviderInterface;
 
 final class ResiliencePipelineTest extends TestCase
 {
+    public function test_factory_shares_one_adapter_with_builder_copies_pipelines_and_components(): void
+    {
+        $factory = new ResiliencePipelineFactory(new FakeClock, new InMemoryStateStore);
+        $builder = $factory->pipeline('payments.charge')
+            ->withRetry($this->retryPolicy(2))
+            ->withCircuitBreaker(CircuitBreakerPolicy::create())
+            ->withBulkhead(BulkheadPolicy::create())
+            ->withRateLimit(RateLimitPolicy::create())
+            ->withFallback(static fn (): string => 'fallback');
+        $adapter = (new ReflectionProperty($factory, 'instrumentation'))->getValue($factory);
+        self::assertInstanceOf(ResilienceInstrumentation::class, $adapter);
+        self::assertSame($adapter, (new ReflectionProperty($builder, 'instrumentation'))->getValue($builder));
+
+        foreach ([$builder->build(), $factory->pipeline('payments.charge')->build(), $factory->pipeline('shipping')->build()] as $pipeline) {
+            self::assertSame($adapter, (new ReflectionProperty($pipeline, 'instrumentation'))->getValue($pipeline));
+            foreach (['retryExecutor', 'circuitBreaker'] as $property) {
+                $component = (new ReflectionProperty($pipeline, $property))->getValue($pipeline);
+                self::assertSame($adapter, (new ReflectionProperty($component, 'instrumentation'))->getValue($component));
+            }
+        }
+    }
+
+    #[DataProvider('sinkFailures')]
+    public function test_factory_wires_retry_and_circuit_observers_through_builder_copies(bool $dispatcherThrows, bool $telemetryThrows): void
+    {
+        $events = $increments = [];
+        $dispatcher = $this->createMock(EventDispatcherInterface::class);
+        $dispatcher->method('dispatch')->willReturnCallback(static function (object $event) use (&$events, $dispatcherThrows): object {
+            $events[] = $event;
+            if ($dispatcherThrows) {
+                throw new LogicException('listener failed');
+            }
+
+            return $event;
+        });
+        $telemetry = $this->createMock(TelemetryProviderInterface::class);
+        $telemetry->method('increment')->willReturnCallback(static function (string $name, int|float $value, array $attributes) use (&$increments, $telemetryThrows): void {
+            if (in_array($name, ['tusk.resilience.retries', 'tusk.resilience.circuit.transitions'], true)) {
+                $increments[] = [$name, $value, $attributes];
+            }
+            if ($telemetryThrows) {
+                throw new LogicException('counter failed');
+            }
+        });
+        $clock = new FakeClock;
+        $store = new InMemoryStateStore;
+        $factory = new ResiliencePipelineFactory($clock, $store, $dispatcher, $telemetry);
+        $pipeline = $factory->pipeline('payments.charge')
+            ->withRetry($this->retryPolicy(2))
+            ->withCircuitBreaker(CircuitBreakerPolicy::create(failureThreshold: 1, openDurationMilliseconds: 10))
+            ->withBulkhead(BulkheadPolicy::create())
+            ->withRateLimit(RateLimitPolicy::create(capacity: 10))
+            ->withFallback(static fn (): string => 'fallback')
+            ->build();
+        $context = OperationContext::create('charge', retryAllowed: true, metadata: ['private' => 'secret']);
+        $failure = new RuntimeException('private message');
+        $attempts = 0;
+
+        self::assertSame('fallback', $pipeline->run(static function () use ($failure, &$attempts): never {
+            $attempts++;
+            throw $failure;
+        }, $context));
+        self::assertSame(2, $attempts);
+        self::assertSame('OPEN', $store->get('cb:payments.charge')['state']);
+        $clock->sleepMilliseconds(10);
+        self::assertSame('recovered', $pipeline->run(static fn (): string => 'recovered', $context));
+        self::assertSame('CLOSED', $store->get('cb:payments.charge')['state']);
+        self::assertEquals([
+            new RetryScheduled('charge', 1, 0, RuntimeException::class),
+            new CircuitStateChanged('charge', State::CLOSED, State::OPEN),
+            new CircuitStateChanged('charge', State::OPEN, State::HALF_OPEN),
+            new CircuitStateChanged('charge', State::HALF_OPEN, State::CLOSED),
+        ], array_values(array_filter($events, static fn (object $event): bool => $event instanceof RetryScheduled || $event instanceof CircuitStateChanged)));
+        self::assertSame([
+            ['tusk.resilience.retries', 1, []],
+            ['tusk.resilience.circuit.transitions', 1, ['from' => 'CLOSED', 'to' => 'OPEN']],
+            ['tusk.resilience.circuit.transitions', 1, ['from' => 'OPEN', 'to' => 'HALF_OPEN']],
+            ['tusk.resilience.circuit.transitions', 1, ['from' => 'HALF_OPEN', 'to' => 'CLOSED']],
+        ], $increments);
+
+        $originalFailure = null;
+        try {
+            $factory->pipeline('shipping')->withCircuitBreaker(CircuitBreakerPolicy::create(failureThreshold: 1))->run(static function () use ($failure): never {
+                throw $failure;
+            }, $context);
+        } catch (RuntimeException $caught) {
+            $originalFailure = $caught;
+        }
+        self::assertSame($failure, $originalFailure);
+    }
+
+    /** @return array<string, array{bool, bool}> */
+    public static function sinkFailures(): array
+    {
+        return [
+            'both healthy' => [false, false],
+            'dispatcher throws' => [true, false],
+            'telemetry throws' => [false, true],
+            'both throw' => [true, true],
+        ];
+    }
+
     public function test_pipeline_builder_is_immutable_and_propagates_the_same_context(): void
     {
         $factory = new ResiliencePipelineFactory(new FakeClock, new InMemoryStateStore);

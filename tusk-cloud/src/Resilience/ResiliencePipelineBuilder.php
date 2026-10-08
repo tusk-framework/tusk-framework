@@ -20,6 +20,7 @@ final readonly class ResiliencePipelineBuilder
         private ?BulkheadPolicy $bulkheadPolicy = null,
         private ?RateLimitPolicy $rateLimitPolicy = null,
         private ?Closure $fallback = null,
+        private ?ResilienceInstrumentation $instrumentation = null,
     ) {}
 
     public static function create(
@@ -28,10 +29,11 @@ final readonly class ResiliencePipelineBuilder
         CircuitBreaker $circuitBreaker,
         Bulkhead $bulkhead,
         RateLimiter $rateLimiter,
+        ?ResilienceInstrumentation $instrumentation = null,
     ): self {
         $context = OperationContext::create($name);
 
-        return new self($context->operation(), $retryExecutor, $circuitBreaker, $bulkhead, $rateLimiter);
+        return new self($context->operation(), $retryExecutor, $circuitBreaker, $bulkhead, $rateLimiter, instrumentation: $instrumentation);
     }
 
     public function withRetry(RetryPolicy $policy): self
@@ -72,6 +74,7 @@ final readonly class ResiliencePipelineBuilder
             $this->bulkheadPolicy,
             $this->rateLimitPolicy,
             $this->fallback,
+            $this->instrumentation,
         );
     }
 
@@ -103,6 +106,7 @@ final readonly class ResiliencePipelineBuilder
             $replaceBulkhead ? $bulkheadPolicy : $this->bulkheadPolicy,
             $replaceRateLimit ? $rateLimitPolicy : $this->rateLimitPolicy,
             $replaceFallback ? $fallback : $this->fallback,
+            $this->instrumentation,
         );
     }
 }

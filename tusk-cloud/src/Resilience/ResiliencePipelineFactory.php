@@ -7,6 +7,8 @@ namespace Tusk\Cloud\Resilience;
 use Tusk\Contracts\Cloud\Resilience\ClockInterface;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
 use Tusk\Contracts\Cloud\Resilience\StateStoreInterface;
+use Tusk\Contracts\Events\EventDispatcherInterface;
+use Tusk\Contracts\Observability\TelemetryProviderInterface;
 use WeakReference;
 
 final class ResiliencePipelineFactory
@@ -14,10 +16,16 @@ final class ResiliencePipelineFactory
     /** @var array<string, WeakReference<CircuitBreaker>> */
     private array $circuitBreakers = [];
 
+    private readonly ResilienceInstrumentation $instrumentation;
+
     public function __construct(
         private readonly ClockInterface $clock,
         private readonly StateStoreInterface $stateStore,
-    ) {}
+        ?EventDispatcherInterface $eventDispatcher = null,
+        ?TelemetryProviderInterface $telemetry = null,
+    ) {
+        $this->instrumentation = new ResilienceInstrumentation($eventDispatcher, $telemetry, $clock);
+    }
 
     public function pipeline(string $name): ResiliencePipelineBuilder
     {
@@ -31,16 +39,17 @@ final class ResiliencePipelineFactory
 
         $breaker = ($this->circuitBreakers[$name] ?? null)?->get();
         if (! $breaker instanceof CircuitBreaker) {
-            $breaker = new CircuitBreaker($this->stateStore, $this->clock, $name);
+            $breaker = new CircuitBreaker($this->stateStore, $this->clock, $name, $this->instrumentation);
             $this->circuitBreakers[$name] = WeakReference::create($breaker);
         }
 
         return ResiliencePipelineBuilder::create(
             $name,
-            new RetryExecutor($this->clock),
+            new RetryExecutor($this->clock, $this->instrumentation),
             $breaker,
             new Bulkhead($this->clock),
             new RateLimiter($this->clock),
+            $this->instrumentation,
         );
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tusk\Cloud\Resilience;
 
 use Throwable;
+use Tusk\Cloud\Resilience\Event\RetryScheduled;
 use Tusk\Cloud\Resilience\Exception\OperationCancelledException;
 use Tusk\Cloud\Resilience\Exception\ResilienceDeadlineExceededException;
 use Tusk\Contracts\Cloud\Resilience\ClockInterface;
@@ -12,7 +13,10 @@ use Tusk\Contracts\Cloud\Resilience\OperationContext;
 
 final readonly class RetryExecutor
 {
-    public function __construct(private ClockInterface $clock) {}
+    public function __construct(
+        private ClockInterface $clock,
+        private ?ResilienceInstrumentation $instrumentation = null,
+    ) {}
 
     public function execute(callable $operation, OperationContext $context, RetryPolicy $policy): mixed
     {
@@ -34,6 +38,11 @@ final readonly class RetryExecutor
                 $delay = $policy->backoffStrategy()->delayMilliseconds($attempt, $previousDelay);
                 $this->assertNotCancelled($context);
                 $this->assertWithinDeadline($context, $failure, $delay);
+                try {
+                    $this->instrumentation?->retryScheduled(new RetryScheduled($context->operation(), $attempt, $delay, $failure::class));
+                } catch (Throwable) {
+                    // Event validation must not change custom backoff behavior.
+                }
                 $this->sleepWithCancellation($delay, $context, $failure);
                 $previousDelay = $delay;
                 $previousFailure = $failure;

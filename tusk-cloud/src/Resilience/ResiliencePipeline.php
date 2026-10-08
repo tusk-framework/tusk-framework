@@ -22,6 +22,7 @@ final readonly class ResiliencePipeline
         private ?BulkheadPolicy $bulkheadPolicy = null,
         private ?RateLimitPolicy $rateLimitPolicy = null,
         private ?Closure $fallback = null,
+        private ?ResilienceInstrumentation $instrumentation = null,
     ) {}
 
     public function run(callable $operation, ?OperationContext $context = null): mixed
