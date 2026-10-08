@@ -12,6 +12,6 @@ interface CircuitBreakerInterface
 
     public function state(): State;
 
-    /** @return array{state: string, failureCount: int, openedAtMilliseconds: int|null, halfOpenProbeCount: int} */
+    /** @return array{state: string, failureCount: int, openedAtMilliseconds: int|null, halfOpenProbeCount: int, halfOpenGeneration: int} */
     public function snapshot(): array;
 }

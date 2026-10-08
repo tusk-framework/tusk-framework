@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Tusk\Cloud\Tests\Resilience;
 
+use Fiber;
 use InvalidArgumentException;
+use LogicException;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Tusk\Cloud\Resilience\CircuitBreaker;
@@ -14,6 +16,7 @@ use Tusk\Cloud\Resilience\InMemoryStateStore;
 use Tusk\Cloud\Resilience\State;
 use Tusk\Cloud\Resilience\Testing\FakeClock;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
+use Tusk\Contracts\Cloud\Resilience\StateStoreInterface;
 
 final class CircuitBreakerTest extends TestCase
 {
@@ -43,11 +46,11 @@ final class CircuitBreakerTest extends TestCase
         $failure = new RuntimeException('provider failed');
 
         $this->catchSameFailure($breaker, $context, $policy, $failure);
-        self::assertSame(['state' => 'CLOSED', 'failureCount' => 1, 'openedAtMilliseconds' => null, 'halfOpenProbeCount' => 0], $breaker->snapshot());
+        self::assertSame(['state' => 'CLOSED', 'failureCount' => 1, 'openedAtMilliseconds' => null, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => 0], $breaker->snapshot());
         $clock->sleepMilliseconds(7);
         $this->catchSameFailure($breaker, $context, $policy, $failure);
         self::assertSame(State::OPEN, $breaker->state());
-        self::assertSame(['state' => 'OPEN', 'failureCount' => 2, 'openedAtMilliseconds' => 107, 'halfOpenProbeCount' => 0], $breaker->snapshot());
+        self::assertSame(['state' => 'OPEN', 'failureCount' => 2, 'openedAtMilliseconds' => 107, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => 0], $breaker->snapshot());
     }
 
     public function test_closed_success_resets_consecutive_failures(): void
@@ -102,7 +105,7 @@ final class CircuitBreakerTest extends TestCase
 
             return 'recovered';
         }, $context, $policy));
-        self::assertSame($this->closedSnapshot(), $breaker->snapshot());
+        self::assertSame($this->closedSnapshot(1), $breaker->snapshot());
     }
 
     public function test_failed_probe_reopens_and_restarts_open_duration(): void
@@ -116,7 +119,7 @@ final class CircuitBreakerTest extends TestCase
         $failure = new RuntimeException('probe failed');
 
         $this->catchSameFailure($breaker, $context, $policy, $failure);
-        self::assertSame(['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 150, 'halfOpenProbeCount' => 0], $breaker->snapshot());
+        self::assertSame(['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 150, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => 1], $breaker->snapshot());
         $this->expectOpen($breaker, $context, $policy);
         $clock->sleepMilliseconds(50);
         self::assertSame('ok', $breaker->execute(fn (): string => 'ok', $context, $policy));
@@ -138,7 +141,7 @@ final class CircuitBreakerTest extends TestCase
 
             return 'outer';
         }, $context, $policy));
-        self::assertSame($this->closedSnapshot(), $breaker->snapshot());
+        self::assertSame($this->closedSnapshot(1), $breaker->snapshot());
     }
 
     public function test_configured_probe_limit_allows_only_that_many_in_flight(): void
@@ -160,7 +163,7 @@ final class CircuitBreakerTest extends TestCase
 
             return 'outer';
         }, $context, $policy));
-        self::assertSame($this->closedSnapshot(), $breaker->snapshot());
+        self::assertSame($this->closedSnapshot(1), $breaker->snapshot());
     }
 
     public function test_late_failed_probe_reopens_after_another_probe_succeeds(): void
@@ -178,7 +181,91 @@ final class CircuitBreakerTest extends TestCase
             self::assertSame(State::CLOSED, $breaker->state());
             throw $lateFailure;
         });
-        self::assertSame(['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 110, 'halfOpenProbeCount' => 0], $breaker->snapshot());
+        self::assertSame(['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 110, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => 1], $breaker->snapshot());
+    }
+
+    public function test_stale_success_cannot_close_a_later_half_open_round(): void
+    {
+        [$breaker, $oldProbe, $newProbe, $oldGeneration] = $this->startLaterRoundWithOldProbe(static fn (): string => 'old success');
+        $before = $breaker->snapshot();
+        self::assertSame(1, $oldGeneration);
+        self::assertSame(2, $before['halfOpenGeneration']);
+
+        $oldProbe->resume();
+        self::assertSame('old success', $oldProbe->getReturn());
+        self::assertSame($before, $breaker->snapshot());
+
+        $newProbe->resume();
+        self::assertSame('new success', $newProbe->getReturn());
+        self::assertSame(State::CLOSED, $breaker->state());
+    }
+
+    public function test_stale_failure_cannot_reopen_a_later_half_open_round(): void
+    {
+        $oldFailure = new LogicException('old probe failed');
+        [$breaker, $oldProbe, $newProbe] = $this->startLaterRoundWithOldProbe(static function () use ($oldFailure): never {
+            throw $oldFailure;
+        });
+        $before = $breaker->snapshot();
+
+        try {
+            $oldProbe->resume();
+            self::fail('Old probe failure was swallowed.');
+        } catch (LogicException $caught) {
+            self::assertSame($oldFailure, $caught);
+        }
+        self::assertSame($before, $breaker->snapshot());
+
+        $newProbe->resume();
+        self::assertSame('new success', $newProbe->getReturn());
+        self::assertSame(State::CLOSED, $breaker->state());
+    }
+
+    public function test_outcome_store_get_failure_preserves_original_throwable(): void
+    {
+        $this->assertOriginalFailureSurvivesStoreFailure('get');
+    }
+
+    public function test_outcome_store_set_failure_preserves_original_throwable(): void
+    {
+        $this->assertOriginalFailureSurvivesStoreFailure('set');
+    }
+
+    public function test_legacy_or_malformed_generation_is_treated_as_closed(): void
+    {
+        $store = new InMemoryStateStore;
+        $breaker = new CircuitBreaker($store, new FakeClock, 'payments');
+
+        foreach ([
+            ['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 0, 'halfOpenProbeCount' => 0],
+            ['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 0, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => 'old'],
+        ] as $record) {
+            $store->set('cb:payments', $record);
+            self::assertSame(State::CLOSED, $breaker->state());
+            self::assertSame($this->closedSnapshot(), $breaker->snapshot());
+        }
+    }
+
+    public function test_exhausted_generation_rejects_probe_without_overflow_or_invoking_operation(): void
+    {
+        $store = new InMemoryStateStore;
+        $clock = new FakeClock(10);
+        $breaker = new CircuitBreaker($store, $clock, 'payments');
+        $policy = CircuitBreakerPolicy::create(failureThreshold: 1, openDurationMilliseconds: 10);
+        $record = ['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 0, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => PHP_INT_MAX];
+        $store->set('cb:payments', $record);
+        $called = false;
+
+        try {
+            $breaker->execute(function () use (&$called): void {
+                $called = true;
+            }, OperationContext::create('charge'), $policy);
+            self::fail('Exhausted generation admitted a probe.');
+        } catch (CircuitOpenException) {
+            self::assertFalse($called);
+        }
+
+        self::assertSame($record, $breaker->snapshot());
     }
 
     public function test_missing_and_malformed_store_records_are_treated_as_closed(): void
@@ -241,9 +328,81 @@ final class CircuitBreakerTest extends TestCase
         }
     }
 
-    /** @return array{state: string, failureCount: int, openedAtMilliseconds: null, halfOpenProbeCount: int} */
-    private function closedSnapshot(): array
+    /** @return array{CircuitBreaker, Fiber, Fiber, int} */
+    private function startLaterRoundWithOldProbe(callable $oldCompletion): array
     {
-        return ['state' => 'CLOSED', 'failureCount' => 0, 'openedAtMilliseconds' => null, 'halfOpenProbeCount' => 0];
+        $clock = new FakeClock;
+        $breaker = new CircuitBreaker(new InMemoryStateStore, $clock, 'payments');
+        $policy = CircuitBreakerPolicy::create(failureThreshold: 1, openDurationMilliseconds: 10, halfOpenProbeLimit: 2);
+        $context = OperationContext::create('charge');
+        $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('first outage'));
+        $clock->sleepMilliseconds(10);
+
+        $oldProbe = new Fiber(static fn (): mixed => $breaker->execute(static function () use ($oldCompletion): mixed {
+            Fiber::suspend();
+
+            return $oldCompletion();
+        }, $context, $policy));
+        $oldProbe->start();
+        self::assertTrue($oldProbe->isSuspended());
+        $oldGeneration = $breaker->snapshot()['halfOpenGeneration'];
+
+        self::assertSame('first recovery', $breaker->execute(static fn (): string => 'first recovery', $context, $policy));
+        $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('second outage'));
+        $clock->sleepMilliseconds(10);
+
+        $newProbe = new Fiber(static fn (): string => $breaker->execute(static function (): string {
+            Fiber::suspend();
+
+            return 'new success';
+        }, $context, $policy));
+        $newProbe->start();
+        self::assertTrue($newProbe->isSuspended());
+        self::assertSame(State::HALF_OPEN, $breaker->state());
+
+        return [$breaker, $oldProbe, $newProbe, $oldGeneration];
+    }
+
+    private function assertOriginalFailureSurvivesStoreFailure(string $failurePoint): void
+    {
+        $store = new class($failurePoint) implements StateStoreInterface
+        {
+            private int $reads = 0;
+
+            public function __construct(private readonly string $failurePoint) {}
+
+            public function get(string $key): ?array
+            {
+                if (++$this->reads === 2 && $this->failurePoint === 'get') {
+                    throw new RuntimeException('store read failed');
+                }
+
+                return null;
+            }
+
+            public function set(string $key, array $data, ?float $ttl = null): void
+            {
+                if ($this->failurePoint === 'set') {
+                    throw new RuntimeException('store write failed');
+                }
+            }
+        };
+        $breaker = new CircuitBreaker($store, new FakeClock, 'payments');
+        $failure = new LogicException('operation failed');
+
+        try {
+            $breaker->execute(static function () use ($failure): never {
+                throw $failure;
+            }, OperationContext::create('charge'), CircuitBreakerPolicy::create());
+            self::fail('Operation failure was swallowed.');
+        } catch (\Throwable $caught) {
+            self::assertSame($failure, $caught);
+        }
+    }
+
+    /** @return array{state: string, failureCount: int, openedAtMilliseconds: null, halfOpenProbeCount: int, halfOpenGeneration: int} */
+    private function closedSnapshot(int $generation = 0): array
+    {
+        return ['state' => 'CLOSED', 'failureCount' => 0, 'openedAtMilliseconds' => null, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $generation];
     }
 }
