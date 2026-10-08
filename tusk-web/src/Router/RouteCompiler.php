@@ -38,7 +38,7 @@ class RouteCompiler
             } elseif (is_dir($path)) {
                 $iterator = new RecursiveIteratorIterator(new RecursiveCallbackFilterIterator(
                     new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
-                    static fn (SplFileInfo $file): bool => ! ($file->isDir() && in_array($file->getFilename(), ['vendor', '.git', '.superpowers', '.tusk'], true)),
+                    static fn (SplFileInfo $file): bool => ! ($file->isDir() && in_array($file->getFilename(), ['vendor', '.git', '.superpowers', '.tusk', '.worktrees'], true)),
                 ));
                 foreach ($iterator as $file) {
                     $files[] = $file;

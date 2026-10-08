@@ -79,4 +79,43 @@ PHP);
             rmdir($directory);
         }
     }
+
+    public function test_local_git_worktree_directories_are_not_scanned_as_routes(): void
+    {
+        $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'tusk-routes-'.bin2hex(random_bytes(4));
+        $worktree = $directory.DIRECTORY_SEPARATOR.'.worktrees'.DIRECTORY_SEPARATOR.'feature';
+        mkdir($worktree, 0755, true);
+
+        $namespace = 'TuskWebRouteWorktree'.bin2hex(random_bytes(4));
+        $source = $worktree.DIRECTORY_SEPARATOR.'WorktreeController.php';
+        file_put_contents($source, sprintf(<<<'PHP'
+<?php
+
+namespace %s;
+
+use Tusk\Web\Attribute\Controller;
+use Tusk\Web\Attribute\Route;
+
+#[Controller]
+final class WorktreeController
+{
+    #[Route('/from-worktree')]
+    public function index(): string
+    {
+        return 'worktree';
+    }
+}
+PHP, $namespace));
+
+        try {
+            $routes = (new RouteCompiler)->scan([$directory]);
+
+            self::assertSame([], $routes['GET']);
+        } finally {
+            unlink($source);
+            rmdir($worktree);
+            rmdir(dirname($worktree));
+            rmdir($directory);
+        }
+    }
 }

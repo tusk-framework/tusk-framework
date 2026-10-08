@@ -72,6 +72,37 @@ PHP);
         }
     }
 
+    public function test_local_git_worktree_directories_are_not_scanned_as_application_services(): void
+    {
+        $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'tusk-scanner-'.bin2hex(random_bytes(4));
+        $worktree = $directory.DIRECTORY_SEPARATOR.'.worktrees'.DIRECTORY_SEPARATOR.'feature';
+        mkdir($worktree, 0755, true);
+
+        $namespace = 'TuskCoreScannerWorktree'.bin2hex(random_bytes(4));
+        $source = $worktree.DIRECTORY_SEPARATOR.'WorktreeService.php';
+        file_put_contents($source, sprintf(<<<'PHP'
+<?php
+
+namespace %s;
+
+use Tusk\Contracts\Attributes\Service;
+
+#[Service]
+final class WorktreeService {}
+PHP, $namespace));
+
+        try {
+            $definitions = (new ServiceScanner)->scan([$directory]);
+
+            self::assertArrayNotHasKey($namespace.'\\WorktreeService', $definitions);
+        } finally {
+            unlink($source);
+            rmdir($worktree);
+            rmdir(dirname($worktree));
+            rmdir($directory);
+        }
+    }
+
     public function test_nullable_service_dependencies_are_marked_as_optional(): void
     {
         $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'tusk-scanner-'.bin2hex(random_bytes(4));
