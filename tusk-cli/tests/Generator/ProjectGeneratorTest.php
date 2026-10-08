@@ -44,7 +44,7 @@ class ProjectGeneratorTest extends TestCase
         (new ProjectGenerator)->generate('sample', 'api');
         $root = $this->directory.'/sample';
 
-        foreach (['app/Controller/HomeController.php', 'bootstrap/app.php', 'bootstrap/providers.php', 'config/app.php', 'routes/web.php', 'public/index.php', '.gitignore', 'tusk.json', 'composer.json'] as $file) {
+        foreach (['app/Controller/HomeController.php', 'app/Jobs/WelcomeJob.php', 'app/Jobs/dispatch-example.php', 'bootstrap/app.php', 'bootstrap/providers.php', 'config/app.php', 'config/runtime.php', 'routes/web.php', 'public/index.php', '.gitignore', 'tusk.json', 'composer.json'] as $file) {
             self::assertFileExists($root.'/'.$file);
         }
         self::assertStringContainsString('/.tusk/', file_get_contents($root.'/.gitignore'));
@@ -52,12 +52,20 @@ class ProjectGeneratorTest extends TestCase
         self::assertFileDoesNotExist($root.'/.tusk/runtime/worker.php');
         self::assertSame(['port' => 8080, 'worker_count' => 4], json_decode(file_get_contents($root.'/tusk.json'), true, 512, JSON_THROW_ON_ERROR));
         self::assertSame('app/', json_decode(file_get_contents($root.'/composer.json'), true, 512, JSON_THROW_ON_ERROR)['autoload']['psr-4']['App\\']);
+        self::assertStringContainsString("->withJobs(__DIR__.'/../app/Jobs')", file_get_contents($root.'/bootstrap/app.php'));
+        self::assertStringContainsString('capabilities.jobs', file_get_contents($root.'/config/runtime.php'));
+        self::assertStringContainsString("AsJob('welcome.email')", file_get_contents($root.'/app/Jobs/WelcomeJob.php'));
+        self::assertStringContainsString("json_encode(['user_id' => $userId], JSON_THROW_ON_ERROR)", file_get_contents($root.'/app/Jobs/dispatch-example.php'));
+        self::assertStringContainsString("'max_attempts' => 3", file_get_contents($root.'/config/runtime.php'));
+        self::assertStringContainsString("'modules' => ['http', 'capabilities.jobs']", file_get_contents($root.'/config/runtime.php'));
 
         require $root.'/app/Controller/HomeController.php';
+        require $root.'/app/Jobs/dispatch-example.php';
         $application = require $root.'/bootstrap/app.php';
         self::assertInstanceOf(Application::class, $application);
         self::assertSame(realpath($root), realpath($application->basePath()));
         self::assertIsArray(require $root.'/config/app.php');
+        self::assertIsArray(require $root.'/config/runtime.php');
         self::assertIsCallable(require $root.'/routes/web.php');
         self::assertInstanceOf(Router::class, $application->container()->get(Router::class));
         self::assertInstanceOf(Repository::class, $application->container()->get(Repository::class));

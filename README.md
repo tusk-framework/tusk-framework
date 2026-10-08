@@ -165,3 +165,6 @@ Tusk Framework is open-source software licensed under the [MIT License](LICENSE)
   <a href="https://tusk-framework.github.io/tusk-docs/">Documentation</a> • 
   <a href="https://github.com/tusk-framework">GitHub</a>
 </div>
+# Background jobs
+
+Tusk named jobs run in the RoadRunner worker selected by `RR_MODE=jobs`; applications remain in HTTP mode by default. Handlers use `#[AsJob('name')]`, receive JSON object payloads, and should be idempotent because delivery is at least once. Retry bounds default to three total attempts with a one-second delay. Failed-task retention/dead-letter behavior depends on the RoadRunner queue driver.

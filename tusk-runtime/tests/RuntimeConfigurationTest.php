@@ -27,6 +27,43 @@ final class RuntimeConfigurationTest extends TestCase
 
         self::assertSame('roadrunner', $configuration->adapter());
         self::assertSame(['http'], $configuration->modules());
+        self::assertSame(3, $configuration->jobRetry()->maxAttempts());
+        self::assertSame(1, $configuration->jobRetry()->delaySeconds());
+        self::assertSame('http', $configuration->executionMode());
+    }
+
+    public function test_execution_mode_is_normalized_and_independent_from_runtime_adapter(): void
+    {
+        $configuration = RuntimeConfiguration::fromArray(['runtime' => ['mode' => '  JoBs  ', 'adapter' => 'rr']]);
+
+        self::assertSame('jobs', $configuration->executionMode());
+        self::assertSame('roadrunner', $configuration->adapter());
+    }
+
+    public function test_rr_mode_environment_selects_jobs_at_configuration_boundary(): void
+    {
+        putenv('RR_MODE= JoBs ');
+        try {
+            self::assertSame('jobs', RuntimeConfiguration::fromArray([])->executionMode());
+        } finally {
+            putenv('RR_MODE');
+            unset($_ENV['RR_MODE'], $_SERVER['RR_MODE']);
+        }
+    }
+
+    public function test_unknown_execution_mode_is_rejected_actionably(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Supported RoadRunner modes: http, jobs.');
+
+        RuntimeConfiguration::fromArray(['runtime' => ['mode' => 'grpc']]);
+    }
+
+    public function test_job_retry_reads_nested_runtime_configuration(): void
+    {
+        $configuration = RuntimeConfiguration::fromArray(['runtime' => ['jobs' => ['retry' => ['max_attempts' => 4, 'delay_seconds' => 0]]]]);
+        self::assertSame(4, $configuration->jobRetry()->maxAttempts());
+        self::assertSame(0, $configuration->jobRetry()->delaySeconds());
     }
 
     public function test_unknown_modules_are_rejected_with_the_invalid_value(): void

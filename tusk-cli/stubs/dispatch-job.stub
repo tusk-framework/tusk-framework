@@ -1,0 +1,21 @@
+<?php
+
+namespace App\Jobs;
+
+use Tusk\Contracts\Attributes\Service;
+use Tusk\Contracts\Runtime\Capabilities\QueueInterface;
+
+#[Service]
+final class WelcomeJobProducer
+{
+    public function __construct(private readonly QueueInterface $jobs) {}
+
+    public function dispatchWelcomeEmail(int $userId): void
+    {
+        $this->jobs->dispatch(
+            'default',
+            'welcome.email',
+            json_encode(['user_id' => $userId], JSON_THROW_ON_ERROR),
+        );
+    }
+}

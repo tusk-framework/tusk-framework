@@ -88,6 +88,13 @@ RoadRunner plugins required by the first-party modules are `jobs`, `kv`, `lock`,
 
 The Tusk Engine remains the Go control plane. It generates and validates runtime configuration, starts, monitors, configures, and stops RoadRunner, and performs graceful reload/stop. RoadRunner owns worker pools, supervision, recycling, and Goridge IPC. The PHP runtime manages application lifecycle and adapters; it does not create a second worker pool or proxy.
 
-HTTP uses `RoadRunnerAdapter` backed by `RoadRunnerHttpModule`. `RoadRunnerGrpcModule` owns gRPC service registration without exposing the RoadRunner server to application services. Queue production is separate from consumption: `QueueInterface` never starts a consumer pool, and `JobTaskInterface` is used by a future consumer boundary.
+HTTP uses `RoadRunnerAdapter` backed by `RoadRunnerHttpModule`. In Jobs mode, the same adapter delegates deliveries to `RoadRunnerJobsModule`; one Kernel-owned lifecycle manager is shared with the job processor. `QueueInterface` is producer-only and never starts a consumer pool. `RoadRunnerGrpcModule` owns gRPC service registration without exposing the RoadRunner server to application services.
 
 RoadRunner is the only supported runtime adapter. Unsupported legacy runtime selections are rejected with an actionable error directing applications to `roadrunner`.
+# RoadRunner Jobs
+
+Set `RR_MODE=jobs` for the RoadRunner worker configuration that consumes queues. The default is `http`; this execution mode does not change `TUSK_RUNTIME` or the runtime adapter identity. The same RoadRunner worker and Kernel lifecycle are used for both modes.
+
+Register handlers with `#[AsJob('stable.name')]` and `ApplicationBuilder::withJobs(...)`. Producers dispatch a JSON object through the `QueueInterface` capability. Tusk acknowledges only after the handler succeeds and retries handler failures up to `runtime.jobs.retry.max_attempts` (default `3`) with `runtime.jobs.retry.delay_seconds` (default `1`). Invalid JSON and unknown job names are terminal failures.
+
+Delivery is **at least once**: handlers must be idempotent because a worker can stop after performing a side effect but before acknowledgement. Payloads must be JSON objects, not serialized PHP objects. Failed-message retention and dead-letter queues depend on the configured RoadRunner driver; Tusk does not promise a universal DLQ.

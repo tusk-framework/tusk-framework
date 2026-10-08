@@ -16,6 +16,10 @@ interface LifecycleObserverInterface
 
     public function requestFinished(mixed $response = null, ?Throwable $exception = null): void;
 
+    public function jobStarted(string $name, ?string $id = null): void;
+
+    public function jobFinished(bool $success, ?Throwable $exception = null): void;
+
     public function workerStopped(): void;
 
     public function applicationStopped(): void;

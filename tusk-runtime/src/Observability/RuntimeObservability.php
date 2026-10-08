@@ -21,6 +21,8 @@ final class RuntimeObservability implements LifecycleObserverInterface, RequestS
 
     private ?float $jobStartedAt = null;
 
+    private ?string $jobName = null;
+
     private string $runtime = 'unknown';
 
     public function __construct(
@@ -103,11 +105,9 @@ final class RuntimeObservability implements LifecycleObserverInterface, RequestS
     public function jobStarted(string $name, ?string $id = null): void
     {
         $this->collector->jobStarted($name);
+        $this->jobName = $name;
         $this->jobStartedAt = $this->clock->monotonicSeconds();
         $attributes = ['job.name' => $name];
-        if ($id !== null) {
-            $attributes['job.id'] = $id;
-        }
 
         $this->jobSpan = $this->startSpan('tusk.job.process', $attributes);
     }
@@ -115,20 +115,19 @@ final class RuntimeObservability implements LifecycleObserverInterface, RequestS
     public function jobFinished(bool $success, ?Throwable $exception = null): void
     {
         $duration = $this->durationSince($this->jobStartedAt);
+        $attributes = $this->jobName !== null ? ['job.name' => $this->jobName] : [];
         $this->collector->jobFinished($success, $exception, $duration);
 
         if ($this->jobSpan !== null) {
-            if ($exception !== null) {
-                $this->jobSpan->recordException($exception, ['category' => 'job.failure']);
-            }
             $this->jobSpan->setStatus($success ? 'ok' : 'error', $success ? null : 'job failed');
             $this->endSpan($this->jobSpan);
         }
 
         $this->jobSpan = null;
         $this->jobStartedAt = null;
-        $this->metricIncrement('tusk.jobs.total');
-        $this->metricObserve('tusk.job.duration', $duration);
+        $this->jobName = null;
+        $this->metricIncrement('tusk.jobs.total', 1, $attributes);
+        $this->metricObserve('tusk.job.duration', $duration, $attributes);
     }
 
     public function workerStopped(): void
@@ -198,10 +197,10 @@ final class RuntimeObservability implements LifecycleObserverInterface, RequestS
         }
     }
 
-    private function metricObserve(string $name, float $value): void
+    private function metricObserve(string $name, float $value, array $attributes = []): void
     {
         try {
-            $this->provider->observe($name, $value);
+            $this->provider->observe($name, $value, $attributes);
         } catch (Throwable $exception) {
             $this->collector->telemetryFailure($exception);
         }

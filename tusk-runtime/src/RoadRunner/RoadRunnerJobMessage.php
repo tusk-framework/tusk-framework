@@ -6,6 +6,7 @@ namespace Tusk\Runtime\RoadRunner;
 
 use Spiral\RoadRunner\Jobs\Task\PreparedTaskInterface;
 use Spiral\RoadRunner\Jobs\Task\QueuedTaskInterface;
+use Spiral\RoadRunner\Jobs\Task\ReceivedTaskInterface;
 use Spiral\RoadRunner\Jobs\Task\TaskInterface;
 use Tusk\Contracts\Runtime\Capabilities\QueueMessageInterface;
 
@@ -23,6 +24,11 @@ final class RoadRunnerJobMessage implements QueueMessageInterface
     ) {}
 
     public static function fromQueuedTask(QueuedTaskInterface $task): self
+    {
+        return self::fromTask($task->getId(), $task->getPipeline(), $task);
+    }
+
+    public static function fromReceivedTask(ReceivedTaskInterface $task): self
     {
         return self::fromTask($task->getId(), $task->getPipeline(), $task);
     }
@@ -62,6 +68,9 @@ final class RoadRunnerJobMessage implements QueueMessageInterface
         $headers = [];
 
         foreach ($task->getHeaders() as $name => $values) {
+            if (strcasecmp($name, 'x-tusk-attempt') === 0) {
+                continue;
+            }
             $headers[$name] = implode(',', $values);
         }
 

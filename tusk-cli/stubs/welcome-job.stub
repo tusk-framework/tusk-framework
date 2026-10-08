@@ -1,0 +1,17 @@
+<?php
+
+namespace App\Jobs;
+
+use Tusk\Contracts\Attributes\AsJob;
+use Tusk\Contracts\Runtime\Jobs\JobContext;
+use Tusk\Contracts\Runtime\Jobs\JobHandlerInterface;
+
+#[AsJob('welcome.email')]
+final class WelcomeJob implements JobHandlerInterface
+{
+    public function handle(JobContext $job): void
+    {
+        $data = $job->jsonPayload();
+        // Replace this with an idempotent application action.
+    }
+}

@@ -13,3 +13,6 @@ Usually invoked via the main `tusk` binary:
 ```bash
 ./tusk make:controller User
 ```
+# Generated job applications
+
+The generated skeleton includes `app/Jobs/WelcomeJob.php`, a JSON producer example, and `withJobs(__DIR__.'/../app/Jobs')`. Configure RoadRunner with `RR_MODE=jobs` to consume jobs; HTTP remains the default. Delivery is at least once, so handlers should be idempotent. Retry limits live under `runtime.jobs.retry`; driver-specific failed-message retention is controlled by RoadRunner.

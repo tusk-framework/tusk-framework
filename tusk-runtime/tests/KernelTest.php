@@ -8,7 +8,11 @@ use Tusk\Contracts\Runtime\LifecycleManagerInterface;
 use Tusk\Contracts\Runtime\Modules\RuntimeModuleInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
 use Tusk\Runtime\Kernel;
+use Tusk\Runtime\Jobs\JobHandlerRegistry;
 use Tusk\Runtime\Modules\RuntimeModuleRegistry;
+use Spiral\RoadRunner\Jobs\ConsumerInterface;
+use Spiral\RoadRunner\Jobs\Task\ReceivedTaskInterface;
+use Spiral\RoadRunner\WorkerInterface;
 
 final class KernelTestContainer implements ContainerInterface
 {
@@ -63,6 +67,16 @@ final class KernelTestLifecycleManager implements LifecycleManagerInterface
     public function requestEnd(): void
     {
         $this->events[] = 'request.end';
+    }
+
+    public function jobStart(\Tusk\Contracts\Runtime\Jobs\JobContext $job): void
+    {
+        $this->events[] = 'job.start';
+    }
+
+    public function jobEnd(?\Throwable $exception = null): void
+    {
+        $this->events[] = 'job.end';
     }
 
     public function workerStop(): void
@@ -133,6 +147,11 @@ final class KernelTestRuntimeModule implements RuntimeModuleInterface
     {
         $this->events[] = 'stop';
     }
+}
+
+final class KernelTestJobHandler implements \Tusk\Contracts\Runtime\Jobs\JobHandlerInterface
+{
+    public function handle(\Tusk\Contracts\Runtime\Jobs\JobContext $job): void {}
 }
 
 final class KernelTest extends TestCase
@@ -208,5 +227,64 @@ final class KernelTest extends TestCase
             'worker.stop',
             'application.stop',
         ], $lifecycle->events);
+    }
+
+    public function test_jobs_mode_shares_kernel_lifecycle_and_does_not_wrap_tasks_as_requests(): void
+    {
+        $events = [];
+        $task = $this->createMock(ReceivedTaskInterface::class);
+        $task->method('getId')->willReturn('job-1');
+        $task->method('getPipeline')->willReturn('default');
+        $task->method('getName')->willReturn('test.job');
+        $task->method('getPayload')->willReturn('{"ok":true}');
+        $task->method('getHeaders')->willReturn([]);
+        $task->expects(self::once())->method('ack');
+        $container = new class($events) implements ContainerInterface {
+            private array $instances = [];
+            public function __construct(private array &$events) {}
+            public function instance(string $id, object $instance): void { $this->instances[$id] = $instance; }
+            public function get(string $id): object
+            {
+                if ($id === JobHandlerRegistry::class) {
+                    return new JobHandlerRegistry(['test.job' => KernelTestJobHandler::class]);
+                }
+                if ($id === KernelTestJobHandler::class) {
+                    $this->events[] = 'handle';
+                    return new KernelTestJobHandler;
+                }
+                if (isset($this->instances[$id])) {
+                    return $this->instances[$id];
+                }
+                throw new \RuntimeException('Unexpected container resolution: '.$id);
+            }
+            public function has(string $id): bool { return isset($this->instances[$id]); }
+            public function runHooks(string $attributeClass): void {}
+            public function runLifecycleHooks(string $event): void { $this->events[] = $event; }
+            public function resetScope(string $scope): void {}
+        };
+        $lifecycle = new KernelTestLifecycleManager;
+        $consumer = new class($events, $task) implements ConsumerInterface {
+            private bool $delivered = false;
+            public function __construct(private array &$events, private ReceivedTaskInterface $task) {}
+            public function waitTask(): ?ReceivedTaskInterface
+            {
+                $this->events[] = 'wait';
+                if ($this->delivered) { return null; }
+                $this->delivered = true;
+                return $this->task;
+            }
+        };
+        $worker = $this->createMock(WorkerInterface::class);
+        $adapter = new \Tusk\Runtime\Adapters\RoadRunnerAdapter(
+            mode: 'jobs',
+            consumerFactory: static fn (WorkerInterface $worker) => $consumer,
+            workerFactory: static fn () => $worker,
+        );
+        $kernel = new Kernel($container, $adapter, $lifecycle);
+
+        $kernel->run(static function (): void { throw new \LogicException('HTTP handler must not run in Jobs mode.'); });
+
+        self::assertSame(['wait', 'handle', 'wait'], $events);
+        self::assertSame(['application.start', 'worker.start', 'job.start', 'job.end', 'worker.stop', 'application.stop'], $lifecycle->events);
     }
 }

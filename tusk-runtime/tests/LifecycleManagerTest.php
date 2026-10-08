@@ -5,6 +5,7 @@ namespace Tusk\Runtime\Tests;
 use LogicException;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use Tusk\Contracts\Runtime\Jobs\JobContext;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Runtime\LifecycleManager;
 use Tusk\Runtime\Observability\LifecycleObserverInterface;
@@ -60,6 +61,77 @@ final class LifecycleManagerContainer implements ContainerInterface
 
 final class LifecycleManagerTest extends TestCase
 {
+    public function test_job_boundaries_use_job_hooks_and_report_one_outcome_per_delivery(): void
+    {
+        $container = new LifecycleManagerContainer;
+        $observer = new RecordingJobLifecycleObserver;
+        $manager = new LifecycleManager($container, null, $observer);
+        $manager->applicationStart();
+        $manager->workerStart();
+        $job = new JobContext('delivery-1', 'emails', 'mail.welcome', '{"to":"secret"}', ['token' => 'secret']);
+
+        $manager->jobStart($job);
+        $manager->jobEnd();
+        $manager->jobStart($job);
+        $failure = new RuntimeException('handler failed');
+        try {
+            $manager->jobEnd($failure);
+            self::fail('The supplied handler failure should be rethrown.');
+        } catch (RuntimeException $exception) {
+            self::assertSame($failure, $exception);
+        }
+
+        self::assertSame(['application.start', 'worker.start', 'job.start', 'job.end', 'job.start', 'job.end'], $container->events);
+        self::assertSame(['job', 'job'], $container->resetScopes);
+        self::assertSame([['mail.welcome', 'delivery-1'], ['mail.welcome', 'delivery-1']], $observer->starts);
+        self::assertSame([[true, null], [false, $failure]], $observer->finishes);
+    }
+
+    public function test_job_end_preserves_primary_failure_when_hook_and_scope_reset_fail(): void
+    {
+        $container = new LifecycleManagerContainer;
+        $container->failures['job.end'] = new RuntimeException('hook failed');
+        $container->resetFailure = new RuntimeException('reset failed');
+        $observer = new RecordingJobLifecycleObserver;
+        $manager = new LifecycleManager($container, null, $observer);
+        $manager->applicationStart();
+        $manager->workerStart();
+        $manager->jobStart(new JobContext('1', 'queue', 'name', '{}', []));
+        $primary = new RuntimeException('handler failed');
+
+        try {
+            $manager->jobEnd($primary);
+            self::fail('Expected the handler failure.');
+        } catch (RuntimeException $exception) {
+            self::assertSame($primary, $exception);
+        }
+
+        self::assertSame(['job'], $container->resetScopes);
+        self::assertSame([[false, $primary]], $observer->finishes);
+    }
+
+    public function test_job_end_reports_cleanup_failure_when_handler_succeeds(): void
+    {
+        $container = new LifecycleManagerContainer;
+        $failure = new RuntimeException('hook failed');
+        $container->failures['job.end'] = $failure;
+        $observer = new RecordingJobLifecycleObserver;
+        $manager = new LifecycleManager($container, null, $observer);
+        $manager->applicationStart();
+        $manager->workerStart();
+        $manager->jobStart(new JobContext('1', 'queue', 'name', '{}', []));
+
+        try {
+            $manager->jobEnd();
+            self::fail('Expected cleanup failure.');
+        } catch (RuntimeException $exception) {
+            self::assertSame($failure, $exception);
+        }
+
+        self::assertSame(['job'], $container->resetScopes);
+        self::assertSame([[false, $failure]], $observer->finishes);
+    }
+
     public function test_observer_failures_do_not_replace_a_handler_exception(): void
     {
         $container = new LifecycleManagerContainer;
@@ -251,6 +323,10 @@ final class FailingLifecycleObserver implements LifecycleObserverInterface
 
     public function requestStarted(mixed $request = null): void {}
 
+    public function jobStarted(string $name, ?string $id = null): void {}
+
+    public function jobFinished(bool $success, ?\Throwable $exception = null): void {}
+
     public function requestFinished(mixed $response = null, ?\Throwable $exception = null): void
     {
         $this->requestFinishedCalls++;
@@ -259,5 +335,21 @@ final class FailingLifecycleObserver implements LifecycleObserverInterface
 
     public function workerStopped(): void {}
 
+    public function applicationStopped(): void {}
+}
+
+final class RecordingJobLifecycleObserver implements LifecycleObserverInterface
+{
+    public array $starts = [];
+
+    public array $finishes = [];
+
+    public function applicationStarted(): void {}
+    public function workerStarted(): void {}
+    public function requestStarted(mixed $request = null): void {}
+    public function requestFinished(mixed $response = null, ?\Throwable $exception = null): void {}
+    public function jobStarted(string $name, ?string $id = null): void { $this->starts[] = [$name, $id]; }
+    public function jobFinished(bool $success, ?\Throwable $exception = null): void { $this->finishes[] = [$success, $exception]; }
+    public function workerStopped(): void {}
     public function applicationStopped(): void {}
 }

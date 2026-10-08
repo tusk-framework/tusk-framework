@@ -9,7 +9,12 @@ use Tusk\Contracts\Core\ApplicationInterface;
 use Tusk\Contracts\Runtime\LifecycleManagerInterface;
 use Tusk\Contracts\Runtime\RuntimeAdapterInterface;
 use Tusk\Runtime\Modules\RuntimeModuleRegistry;
+use Tusk\Runtime\Adapters\RoadRunnerAdapter;
+use Tusk\Runtime\Jobs\JobHandlerRegistry;
+use Tusk\Runtime\Jobs\JobProcessor;
+use Tusk\Runtime\Jobs\JobRetryConfiguration;
 use Tusk\Runtime\Observability\RuntimeObservability;
+use Tusk\Runtime\RoadRunner\RoadRunnerJobsModule;
 use Tusk\Web\HttpKernel;
 
 final class Kernel implements ApplicationInterface
@@ -55,11 +60,33 @@ final class Kernel implements ApplicationInterface
         $this->stopping = false;
         $this->inLifecycle = true;
         try {
+            if ($this->adapter instanceof RoadRunnerAdapter && $this->adapter->mode() === 'jobs') {
+                $registry = $this->container->get(JobHandlerRegistry::class);
+                if (! $registry instanceof JobHandlerRegistry) {
+                    throw new \LogicException('Job handler registry is not bound in the application container.');
+                }
+                $retry = $this->container->has(JobRetryConfiguration::class)
+                    ? $this->container->get(JobRetryConfiguration::class)
+                    : JobRetryConfiguration::fromArray([]);
+                if (! $retry instanceof JobRetryConfiguration) {
+                    throw new \LogicException('Job retry configuration binding is invalid.');
+                }
+                $module = new RoadRunnerJobsModule(new JobProcessor(
+                    $this->container,
+                    $registry,
+                    $this->lifecycle,
+                    $retry,
+                ));
+                $module->register($this->container);
+            }
             $this->lifecycle->applicationStart();
             $this->lifecycle->workerStart();
             $this->modules->start();
             $requestHandler ??= [$this->container->get(HttpKernel::class), 'handle'];
-            $this->adapter->start($this->container, $this->lifecycle->wrap($requestHandler));
+            $handler = $this->adapter instanceof RoadRunnerAdapter && $this->adapter->mode() === 'jobs'
+                ? $requestHandler
+                : $this->lifecycle->wrap($requestHandler);
+            $this->adapter->start($this->container, $handler);
         } finally {
             $this->inLifecycle = false;
             $this->finishShutdown();
