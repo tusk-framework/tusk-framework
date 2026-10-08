@@ -232,6 +232,28 @@ final class ResiliencePipelineTest extends TestCase
         self::assertSame([['tusk.resilience.operation.duration', 0.0, ['outcome' => 'fallback_failure']]], $observations);
     }
 
+    public function test_circuit_open_exception_subclass_is_not_classified_as_rejection(): void
+    {
+        $events = $increments = $observations = [];
+        $factory = $this->observedFactory(new FakeClock, $events, $increments, $observations);
+        $original = new class extends CircuitOpenException {};
+        $caught = null;
+
+        try {
+            $factory->pipeline('application')->run(static function () use ($original): never {
+                throw $original;
+            });
+            self::fail('The application exception was swallowed.');
+        } catch (CircuitOpenException $failure) {
+            $caught = $failure;
+        }
+
+        self::assertSame($original, $caught);
+        self::assertSame([], $events);
+        self::assertSame([['tusk.resilience.operations', 1, ['outcome' => 'failure']]], $increments);
+        self::assertSame([['tusk.resilience.operation.duration', 0.0, ['outcome' => 'failure']]], $observations);
+    }
+
     private function observedFactory(FakeClock $clock, array &$events, array &$increments, array &$observations, bool $dispatcherThrows = false, bool $telemetryThrows = false): ResiliencePipelineFactory
     {
         $dispatcher = $this->createMock(EventDispatcherInterface::class);

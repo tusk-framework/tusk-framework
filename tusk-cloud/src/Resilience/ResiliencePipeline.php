@@ -68,12 +68,12 @@ final readonly class ResiliencePipeline
         } catch (Throwable $failure) {
             $outcome = 'failure';
             $reason = match (true) {
-                $failure instanceof CircuitOpenException => OperationRejectionReason::CIRCUIT_OPEN,
-                $failure instanceof BulkheadRejectedException => OperationRejectionReason::BULKHEAD_REJECTED,
-                $failure instanceof BulkheadTimeoutException => OperationRejectionReason::BULKHEAD_TIMEOUT,
-                $failure instanceof RateLimitRejectedException => OperationRejectionReason::RATE_LIMIT_REJECTED,
-                $failure instanceof ResilienceDeadlineExceededException => OperationRejectionReason::DEADLINE_EXCEEDED,
-                $failure instanceof OperationCancelledException => OperationRejectionReason::CANCELLED,
+                $failure::class === CircuitOpenException::class => OperationRejectionReason::CIRCUIT_OPEN,
+                $failure::class === BulkheadRejectedException::class => OperationRejectionReason::BULKHEAD_REJECTED,
+                $failure::class === BulkheadTimeoutException::class => OperationRejectionReason::BULKHEAD_TIMEOUT,
+                $failure::class === RateLimitRejectedException::class => OperationRejectionReason::RATE_LIMIT_REJECTED,
+                $failure::class === ResilienceDeadlineExceededException::class => OperationRejectionReason::DEADLINE_EXCEEDED,
+                $failure::class === OperationCancelledException::class => OperationRejectionReason::CANCELLED,
                 default => null,
             };
             if ($reason !== null) {
