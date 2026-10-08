@@ -97,8 +97,16 @@
 - Transport timeouts remain configured on the injected PSR-18 client because PSR-18 has no standard per-request timeout API.
 
 - [x] **Step 1: Document the public API and operational limits** in `tusk-cloud/README.md`, including explicit examples for retry/circuit/bulkhead/rate-limit composition and the fact that an in-flight PSR-18 call requires transport-level timeout configuration.
-- [ ] **Step 2: Run verification:** `vendor/bin/phpunit tusk-cloud/tests/Resilience`, `vendor/bin/phpstan analyse tusk-cloud/src tusk-contracts/src --no-progress`, `vendor/bin/pint --test` for touched PHP files, `composer validate --no-check-publish`, and `git diff --check`.
-- [ ] **Step 3: Review the final diff** for safe retry semantics, response identity, body position, bounded policy behavior, and provider neutrality; open the PR using the repository's required PR structure and request a fresh code review.
+- [x] **Step 2: Run verification:** `vendor/bin/phpunit tusk-cloud/tests/Resilience`, `vendor/bin/phpstan analyse tusk-cloud/src tusk-contracts/src --no-progress`, `vendor/bin/pint --test` for touched PHP files, `composer validate --no-check-publish`, and `git diff --check`.
+- [x] **Step 3: Review the final diff** for safe retry semantics, response identity, body position, bounded policy behavior, and provider neutrality; open the PR using the repository's required PR structure and request a fresh code review.
+
+#### Completion evidence
+
+- Full PHPUnit suite: 266 tests, 1,081 assertions, 3 skipped; resilience suite: 131 tests, 399 assertions.
+- PHPStan on `tusk-cloud/src` and `tusk-contracts/src`: passed. Pint on the touched HTTP resilience source/tests: passed. Composer validation and `git diff --check`: passed.
+- CI passed on PHP 8.2, 8.3, and 8.4, plus the repository validation workflow.
+- Two independent code reviews approved the implementation after the first review's retry-veto and empty-stream findings were fixed.
+- Delivered in [PR #30](https://github.com/tusk-framework/tusk-framework/pull/30), merged into `main` as `491765f`. This completes only the PSR-18 slice; issue #29 remains open for its deferred scope.
 
 ## Self-Review
 
