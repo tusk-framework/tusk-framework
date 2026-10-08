@@ -25,6 +25,7 @@ class ProjectGenerator
             'routes-web.stub' => 'routes/web.php',
             'config-app.stub' => 'config/app.php',
             'config-runtime.stub' => 'config/runtime.php',
+            'config-resilience.stub' => 'config/resilience.php',
             'gitignore.stub' => '.gitignore',
             'welcome-job.stub' => 'app/Jobs/WelcomeJob.php',
             'dispatch-job.stub' => 'app/Jobs/dispatch-example.php',

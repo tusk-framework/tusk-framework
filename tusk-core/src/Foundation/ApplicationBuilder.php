@@ -3,6 +3,8 @@
 namespace Tusk\Foundation;
 
 use RuntimeException;
+use Tusk\Cloud\Health\HealthCheckRegistry;
+use Tusk\Cloud\Health\ResilienceConfigurationHealthCheck;
 use Tusk\Cloud\Resilience\Configuration\ResilienceConfiguration;
 use Tusk\Cloud\Resilience\Configuration\ResilienceConfigurationLoader;
 use Tusk\Config\ProjectConfigurationLoader;
@@ -76,6 +78,8 @@ class ApplicationBuilder
         $profile = getenv('APP_ENV');
         $profile = is_string($profile) && trim($profile) !== '' ? $profile : 'production';
         $resilience = ResilienceConfigurationLoader::load($resilienceValues, $profile);
+        $healthChecks = new HealthCheckRegistry;
+        $healthChecks->register(new ResilienceConfigurationHealthCheck);
 
         $container = new Container;
         $router = new Router;
@@ -114,6 +118,7 @@ class ApplicationBuilder
             Repository::class => $config,
             RuntimeConfiguration::class => $runtimeConfiguration,
             ResilienceConfiguration::class => $resilience,
+            HealthCheckRegistry::class => $healthChecks,
             HttpKernel::class => $kernel,
             Application::class => $application,
             ApplicationInterface::class => $application,

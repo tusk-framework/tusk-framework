@@ -44,7 +44,7 @@ class ProjectGeneratorTest extends TestCase
         (new ProjectGenerator)->generate('sample', 'api');
         $root = $this->directory.'/sample';
 
-        foreach (['app/Controller/HomeController.php', 'app/Jobs/WelcomeJob.php', 'app/Jobs/dispatch-example.php', 'bootstrap/app.php', 'bootstrap/providers.php', 'config/app.php', 'config/runtime.php', 'routes/web.php', 'public/index.php', '.gitignore', 'tusk.json', 'composer.json'] as $file) {
+        foreach (['app/Controller/HomeController.php', 'app/Jobs/WelcomeJob.php', 'app/Jobs/dispatch-example.php', 'bootstrap/app.php', 'bootstrap/providers.php', 'config/app.php', 'config/runtime.php', 'config/resilience.php', 'routes/web.php', 'public/index.php', '.gitignore', 'tusk.json', 'composer.json'] as $file) {
             self::assertFileExists($root.'/'.$file);
         }
         self::assertStringContainsString('/.tusk/', file_get_contents($root.'/.gitignore'));
@@ -66,6 +66,7 @@ class ProjectGeneratorTest extends TestCase
         self::assertSame(realpath($root), realpath($application->basePath()));
         self::assertIsArray(require $root.'/config/app.php');
         self::assertIsArray(require $root.'/config/runtime.php');
+        self::assertSame(['policies' => [], 'profiles' => []], require $root.'/config/resilience.php');
         self::assertIsCallable(require $root.'/routes/web.php');
         self::assertInstanceOf(Router::class, $application->container()->get(Router::class));
         self::assertInstanceOf(Repository::class, $application->container()->get(Repository::class));

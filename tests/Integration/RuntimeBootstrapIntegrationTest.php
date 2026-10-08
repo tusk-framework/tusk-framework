@@ -2,11 +2,21 @@
 
 namespace Tests\Integration;
 
+use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
+use Tusk\Cloud\Resilience\InMemoryStateStore;
+use Tusk\Cloud\Resilience\ResiliencePipelineBuilder;
+use Tusk\Cloud\Resilience\ResiliencePipelineFactory;
+use Tusk\Cloud\Resilience\SystemClock;
+use Tusk\Contracts\Cloud\Resilience\OperationContext;
 use Tusk\Contracts\Runtime\Capabilities\CapabilityRegistryInterface;
 use Tusk\Core\Container\Container;
 use Tusk\Runtime\RuntimeConfiguration;
 use Tusk\Runtime\RuntimeModuleFactory;
+use Tusk\Web\Http\Request;
+use Tusk\Web\Http\Response;
+use Tusk\Web\HttpKernel;
+use Tusk\Web\Router\Router;
 
 final class RuntimeBootstrapIntegrationTest extends TestCase
 {
@@ -38,5 +48,57 @@ final class RuntimeBootstrapIntegrationTest extends TestCase
         $modules->register($container);
 
         self::assertTrue($container->has(CapabilityRegistryInterface::class));
+    }
+
+    public function test_reused_worker_pipeline_does_not_leak_context_between_requests(): void
+    {
+        $factory = new ResiliencePipelineFactory(new SystemClock, new InMemoryStateStore);
+        $controller = new ResilienceContextController($factory->pipeline('worker-operation'));
+        $container = new Container;
+        $container->instance(ResilienceContextController::class, $controller);
+        $router = new Router;
+        $router->addRoute(['GET'], '/run', [ResilienceContextController::class, 'run']);
+        $kernel = new HttpKernel($container, $router);
+
+        $first = $kernel->handle((new ServerRequest('GET', '/run'))->withQueryParams([
+            'operation' => 'orders.read',
+            'request_id' => 'request-one',
+        ]));
+        $second = $kernel->handle((new ServerRequest('GET', '/run'))->withQueryParams([
+            'operation' => 'inventory.update',
+            'request_id' => 'request-two',
+        ]));
+
+        self::assertSame(['operation' => 'orders.read', 'request_id' => 'request-one'], json_decode((string) $first->getBody(), true, 512, JSON_THROW_ON_ERROR));
+        self::assertSame(['operation' => 'inventory.update', 'request_id' => 'request-two'], json_decode((string) $second->getBody(), true, 512, JSON_THROW_ON_ERROR));
+        self::assertSame([
+            ['orders.read', ['request_id' => 'request-one']],
+            ['inventory.update', ['request_id' => 'request-two']],
+        ], $controller->observedContexts);
+    }
+}
+
+final class ResilienceContextController
+{
+    /** @var list<array{string, array<string, mixed>}> */
+    public array $observedContexts = [];
+
+    public function __construct(private readonly ResiliencePipelineBuilder $pipeline) {}
+
+    public function run(Request $request): Response
+    {
+        $operation = (string) $request->get('operation');
+        $requestId = (string) $request->get('request_id');
+        $context = OperationContext::create($operation, metadata: ['request_id' => $requestId]);
+        $result = $this->pipeline->run(function (OperationContext $operationContext): array {
+            $this->observedContexts[] = [$operationContext->operation(), $operationContext->metadata()];
+
+            return [
+                'operation' => $operationContext->operation(),
+                'request_id' => $operationContext->metadata()['request_id'],
+            ];
+        }, $context);
+
+        return new Response(200, ['Content-Type' => 'application/json'], json_encode($result, JSON_THROW_ON_ERROR));
     }
 }

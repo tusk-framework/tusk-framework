@@ -6,6 +6,7 @@ use InvalidArgumentException;
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use Tusk\Cloud\Health\HealthCheckRegistry;
 use Tusk\Cloud\Resilience\Configuration\ResilienceConfiguration;
 use Tusk\Config\Repository;
 use Tusk\Contracts\Observability\TelemetryProviderInterface;
@@ -93,6 +94,16 @@ PHP);
         $application = Application::configure($this->basePath)->create();
 
         self::assertSame(3, $application->container()->get(ResilienceConfiguration::class)->policy('payments')?->retry()['max_attempts']);
+    }
+
+    public function test_registers_local_resilience_readiness_after_configuration_validation(): void
+    {
+        $application = Application::configure($this->basePath)->create();
+
+        $report = $application->container()->get(HealthCheckRegistry::class)->runChecks();
+
+        self::assertSame('UP', $report['status']);
+        self::assertSame('UP', $report['checks']['resilience_configuration']);
     }
 
     public function test_uses_app_env_as_the_resilience_profile_during_boot(): void
