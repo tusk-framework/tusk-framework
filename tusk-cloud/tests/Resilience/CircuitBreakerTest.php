@@ -32,7 +32,7 @@ final class CircuitBreakerTest extends TestCase
             return 'paid';
         }, $context, CircuitBreakerPolicy::create()));
         self::assertSame(State::CLOSED, $breaker->state());
-        self::assertSame($this->closedSnapshot(), $breaker->snapshot());
+        self::assertSame($this->closedSnapshot($breaker), $breaker->snapshot());
         self::assertSame($breaker->snapshot(), $store->get('cb:payments'));
         self::assertSame($breaker->snapshot(), unserialize(serialize($breaker->snapshot())));
     }
@@ -46,11 +46,11 @@ final class CircuitBreakerTest extends TestCase
         $failure = new RuntimeException('provider failed');
 
         $this->catchSameFailure($breaker, $context, $policy, $failure);
-        self::assertSame(['state' => 'CLOSED', 'failureCount' => 1, 'openedAtMilliseconds' => null, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => 0], $breaker->snapshot());
+        self::assertSame(['state' => 'CLOSED', 'failureCount' => 1, 'openedAtMilliseconds' => null, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $this->generation($breaker, 0)], $breaker->snapshot());
         $clock->sleepMilliseconds(7);
         $this->catchSameFailure($breaker, $context, $policy, $failure);
         self::assertSame(State::OPEN, $breaker->state());
-        self::assertSame(['state' => 'OPEN', 'failureCount' => 2, 'openedAtMilliseconds' => 107, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => 0], $breaker->snapshot());
+        self::assertSame(['state' => 'OPEN', 'failureCount' => 2, 'openedAtMilliseconds' => 107, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $this->generation($breaker, 0)], $breaker->snapshot());
     }
 
     public function test_closed_success_resets_consecutive_failures(): void
@@ -61,7 +61,7 @@ final class CircuitBreakerTest extends TestCase
 
         $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('first'));
         self::assertSame('ok', $breaker->execute(fn (): string => 'ok', $context, $policy));
-        self::assertSame($this->closedSnapshot(), $breaker->snapshot());
+        self::assertSame($this->closedSnapshot($breaker), $breaker->snapshot());
         $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('second'));
         self::assertSame(State::CLOSED, $breaker->state());
         self::assertSame(1, $breaker->snapshot()['failureCount']);
@@ -105,7 +105,7 @@ final class CircuitBreakerTest extends TestCase
 
             return 'recovered';
         }, $context, $policy));
-        self::assertSame($this->closedSnapshot(1), $breaker->snapshot());
+        self::assertSame($this->closedSnapshot($breaker, 1), $breaker->snapshot());
     }
 
     public function test_failed_probe_reopens_and_restarts_open_duration(): void
@@ -119,7 +119,7 @@ final class CircuitBreakerTest extends TestCase
         $failure = new RuntimeException('probe failed');
 
         $this->catchSameFailure($breaker, $context, $policy, $failure);
-        self::assertSame(['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 150, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => 1], $breaker->snapshot());
+        self::assertSame(['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 150, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $this->generation($breaker, 1)], $breaker->snapshot());
         $this->expectOpen($breaker, $context, $policy);
         $clock->sleepMilliseconds(50);
         self::assertSame('ok', $breaker->execute(fn (): string => 'ok', $context, $policy));
@@ -141,7 +141,7 @@ final class CircuitBreakerTest extends TestCase
 
             return 'outer';
         }, $context, $policy));
-        self::assertSame($this->closedSnapshot(1), $breaker->snapshot());
+        self::assertSame($this->closedSnapshot($breaker, 1), $breaker->snapshot());
     }
 
     public function test_configured_probe_limit_allows_only_that_many_in_flight(): void
@@ -163,7 +163,7 @@ final class CircuitBreakerTest extends TestCase
 
             return 'outer';
         }, $context, $policy));
-        self::assertSame($this->closedSnapshot(1), $breaker->snapshot());
+        self::assertSame($this->closedSnapshot($breaker, 1), $breaker->snapshot());
     }
 
     public function test_late_failed_probe_reopens_after_another_probe_succeeds(): void
@@ -181,15 +181,15 @@ final class CircuitBreakerTest extends TestCase
             self::assertSame(State::CLOSED, $breaker->state());
             throw $lateFailure;
         });
-        self::assertSame(['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 110, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => 1], $breaker->snapshot());
+        self::assertSame(['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 110, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $this->generation($breaker, 1)], $breaker->snapshot());
     }
 
     public function test_stale_success_cannot_close_a_later_half_open_round(): void
     {
         [$breaker, $oldProbe, $newProbe, $oldGeneration] = $this->startLaterRoundWithOldProbe(static fn (): string => 'old success');
         $before = $breaker->snapshot();
-        self::assertSame(1, $oldGeneration);
-        self::assertSame(2, $before['halfOpenGeneration']);
+        self::assertSame($this->generation($breaker, 1), $oldGeneration);
+        self::assertSame($this->generation($breaker, 2), $before['halfOpenGeneration']);
 
         $oldProbe->resume();
         self::assertSame('old success', $oldProbe->getReturn());
@@ -221,6 +221,49 @@ final class CircuitBreakerTest extends TestCase
         self::assertSame(State::CLOSED, $breaker->state());
     }
 
+    public function test_stale_probe_cannot_close_a_new_round_after_legacy_record_replaces_state(): void
+    {
+        $store = new InMemoryStateStore;
+        $clock = new FakeClock;
+        $breaker = new CircuitBreaker($store, $clock, 'payments');
+        $policy = CircuitBreakerPolicy::create(failureThreshold: 1, openDurationMilliseconds: 10);
+        $context = OperationContext::create('charge');
+        $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('first outage'));
+        $clock->sleepMilliseconds(10);
+
+        $oldProbe = new Fiber(static fn (): string => $breaker->execute(static function (): string {
+            Fiber::suspend();
+
+            return 'old success';
+        }, $context, $policy));
+        $oldProbe->start();
+        self::assertTrue($oldProbe->isSuspended());
+
+        $store->set('cb:payments', ['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 0, 'halfOpenProbeCount' => 0]);
+        self::assertSame(State::CLOSED, $breaker->state());
+        $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('second outage'));
+        $clock->sleepMilliseconds(10);
+
+        $newProbe = new Fiber(static fn (): string => $breaker->execute(static function (): string {
+            Fiber::suspend();
+
+            return 'new success';
+        }, $context, $policy));
+        $newProbe->start();
+        self::assertTrue($newProbe->isSuspended());
+        $before = $breaker->snapshot();
+        self::assertSame(State::HALF_OPEN->value, $before['state']);
+        self::assertSame(1, $before['halfOpenProbeCount']);
+
+        $oldProbe->resume();
+        self::assertSame('old success', $oldProbe->getReturn());
+        self::assertSame($before, $breaker->snapshot());
+
+        $newProbe->resume();
+        self::assertSame('new success', $newProbe->getReturn());
+        self::assertSame(State::CLOSED, $breaker->state());
+    }
+
     public function test_outcome_store_get_failure_preserves_original_throwable(): void
     {
         $this->assertOriginalFailureSurvivesStoreFailure('get');
@@ -242,7 +285,7 @@ final class CircuitBreakerTest extends TestCase
         ] as $record) {
             $store->set('cb:payments', $record);
             self::assertSame(State::CLOSED, $breaker->state());
-            self::assertSame($this->closedSnapshot(), $breaker->snapshot());
+            self::assertSame($this->closedSnapshot($breaker), $breaker->snapshot());
         }
     }
 
@@ -252,7 +295,7 @@ final class CircuitBreakerTest extends TestCase
         $clock = new FakeClock(10);
         $breaker = new CircuitBreaker($store, $clock, 'payments');
         $policy = CircuitBreakerPolicy::create(failureThreshold: 1, openDurationMilliseconds: 10);
-        $record = ['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 0, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => PHP_INT_MAX];
+        $record = ['state' => 'OPEN', 'failureCount' => 1, 'openedAtMilliseconds' => 0, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $this->generation($breaker, PHP_INT_MAX)];
         $store->set('cb:payments', $record);
         $called = false;
 
@@ -274,13 +317,13 @@ final class CircuitBreakerTest extends TestCase
         $breaker = new CircuitBreaker($store, new FakeClock, 'payments');
         $policy = CircuitBreakerPolicy::create();
         $context = OperationContext::create('charge');
-        self::assertSame($this->closedSnapshot(), $breaker->snapshot());
+        self::assertSame($this->closedSnapshot($breaker), $breaker->snapshot());
 
         foreach ([['state' => 'OPEN'], ['state' => 'UNKNOWN', 'failureCount' => 0, 'openedAtMilliseconds' => 0, 'halfOpenProbeCount' => 0], ['state' => 'OPEN', 'failureCount' => -1, 'openedAtMilliseconds' => 'yesterday', 'halfOpenProbeCount' => 0]] as $bad) {
             $store->set('cb:payments', $bad);
             self::assertSame(State::CLOSED, $breaker->state());
             self::assertSame('ok', $breaker->execute(fn (): string => 'ok', $context, $policy));
-            self::assertSame($this->closedSnapshot(), $breaker->snapshot());
+            self::assertSame($this->closedSnapshot($breaker), $breaker->snapshot());
         }
     }
 
@@ -328,7 +371,7 @@ final class CircuitBreakerTest extends TestCase
         }
     }
 
-    /** @return array{CircuitBreaker, Fiber, Fiber, int} */
+    /** @return array{CircuitBreaker, Fiber, Fiber, string} */
     private function startLaterRoundWithOldProbe(callable $oldCompletion): array
     {
         $clock = new FakeClock;
@@ -400,9 +443,16 @@ final class CircuitBreakerTest extends TestCase
         }
     }
 
-    /** @return array{state: string, failureCount: int, openedAtMilliseconds: null, halfOpenProbeCount: int, halfOpenGeneration: int} */
-    private function closedSnapshot(int $generation = 0): array
+    private function generation(CircuitBreaker $breaker, int $counter): string
     {
-        return ['state' => 'CLOSED', 'failureCount' => 0, 'openedAtMilliseconds' => null, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $generation];
+        $namespace = explode(':', $breaker->snapshot()['halfOpenGeneration'], 2)[0];
+
+        return "{$namespace}:{$counter}";
+    }
+
+    /** @return array{state: string, failureCount: int, openedAtMilliseconds: null, halfOpenProbeCount: int, halfOpenGeneration: string} */
+    private function closedSnapshot(CircuitBreaker $breaker, int $generation = 0): array
+    {
+        return ['state' => 'CLOSED', 'failureCount' => 0, 'openedAtMilliseconds' => null, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $this->generation($breaker, $generation)];
     }
 }

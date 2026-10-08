@@ -15,6 +15,10 @@ final class CircuitBreaker implements CircuitBreakerInterface
 {
     private readonly string $key;
 
+    private readonly string $generationNamespace;
+
+    private int $generationFloor = 0;
+
     public function __construct(
         private readonly StateStoreInterface $store,
         private readonly ClockInterface $clock,
@@ -26,6 +30,7 @@ final class CircuitBreaker implements CircuitBreakerInterface
         }
 
         $this->key = "cb:{$name}";
+        $this->generationNamespace = bin2hex(random_bytes(16));
     }
 
     public function execute(callable $operation, OperationContext $context, CircuitBreakerPolicy $policy): mixed
@@ -40,13 +45,13 @@ final class CircuitBreaker implements CircuitBreakerInterface
             if ($now < $openedAt || $now - $openedAt < $policy->openDurationMilliseconds()) {
                 throw new CircuitOpenException;
             }
-            if ($snapshot['halfOpenGeneration'] === PHP_INT_MAX) {
+            if ($this->generationFloor === PHP_INT_MAX) {
                 throw new CircuitOpenException('Circuit probe generation is exhausted.');
             }
 
             $snapshot['state'] = State::HALF_OPEN->value;
             $snapshot['halfOpenProbeCount'] = 0;
-            $snapshot['halfOpenGeneration']++;
+            $snapshot['halfOpenGeneration'] = $this->nextGeneration();
         }
 
         if ($snapshot['state'] === State::HALF_OPEN->value) {
@@ -105,13 +110,18 @@ final class CircuitBreaker implements CircuitBreakerInterface
     }
 
     /**
-     * @return array{state: string, failureCount: int, openedAtMilliseconds: int|null, halfOpenProbeCount: int, halfOpenGeneration: int}
+     * @return array{state: string, failureCount: int, openedAtMilliseconds: int|null, halfOpenProbeCount: int, halfOpenGeneration: string}
      */
     public function snapshot(): array
     {
         $data = $this->store->get($this->key);
         if ($data === null || ! $this->validSnapshot($data)) {
             return $this->closedSnapshot();
+        }
+
+        [$namespace, $counter] = explode(':', $data['halfOpenGeneration'], 2);
+        if ($namespace === $this->generationNamespace) {
+            $this->generationFloor = max($this->generationFloor, (int) $counter);
         }
 
         return [
@@ -132,7 +142,9 @@ final class CircuitBreaker implements CircuitBreakerInterface
             || ! in_array($data['state'], [State::CLOSED->value, State::OPEN->value, State::HALF_OPEN->value], true)
             || ! is_int($data['failureCount']) || $data['failureCount'] < 0
             || ! is_int($data['halfOpenProbeCount']) || $data['halfOpenProbeCount'] < 0
-            || ! is_int($data['halfOpenGeneration']) || $data['halfOpenGeneration'] < 0
+            || ! is_string($data['halfOpenGeneration'])
+            || ! preg_match('/\A[0-9a-f]{32}:(0|[1-9][0-9]*)\z/D', $data['halfOpenGeneration'], $matches)
+            || filter_var($matches[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false
         ) {
             return false;
         }
@@ -146,22 +158,27 @@ final class CircuitBreaker implements CircuitBreakerInterface
     }
 
     /**
-     * @return array{state: string, failureCount: int, openedAtMilliseconds: null, halfOpenProbeCount: int, halfOpenGeneration: int}
+     * @return array{state: string, failureCount: int, openedAtMilliseconds: null, halfOpenProbeCount: int, halfOpenGeneration: string}
      */
-    private function closedSnapshot(int $generation = 0): array
+    private function closedSnapshot(?string $generation = null): array
     {
-        return ['state' => State::CLOSED->value, 'failureCount' => 0, 'openedAtMilliseconds' => null, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $generation];
+        return ['state' => State::CLOSED->value, 'failureCount' => 0, 'openedAtMilliseconds' => null, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $generation ?? "{$this->generationNamespace}:0"];
     }
 
     /**
-     * @return array{state: string, failureCount: int, openedAtMilliseconds: int, halfOpenProbeCount: int, halfOpenGeneration: int}
+     * @return array{state: string, failureCount: int, openedAtMilliseconds: int, halfOpenProbeCount: int, halfOpenGeneration: string}
      */
-    private function openSnapshot(CircuitBreakerPolicy $policy, int $now, int $generation): array
+    private function openSnapshot(CircuitBreakerPolicy $policy, int $now, string $generation): array
     {
         return ['state' => State::OPEN->value, 'failureCount' => $policy->failureThreshold(), 'openedAtMilliseconds' => $now, 'halfOpenProbeCount' => 0, 'halfOpenGeneration' => $generation];
     }
 
-    /** @param array{state: string, failureCount: int, openedAtMilliseconds: int|null, halfOpenProbeCount: int, halfOpenGeneration: int} $snapshot */
+    private function nextGeneration(): string
+    {
+        return "{$this->generationNamespace}:".(++$this->generationFloor);
+    }
+
+    /** @param array{state: string, failureCount: int, openedAtMilliseconds: int|null, halfOpenProbeCount: int, halfOpenGeneration: string} $snapshot */
     private function saveSnapshot(array $snapshot): void
     {
         $this->store->set($this->key, $snapshot);
