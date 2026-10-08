@@ -12,6 +12,9 @@ use ReflectionNamedType;
 use SplFileInfo;
 use Throwable;
 use Tusk\Contracts\Attributes\Factory;
+use Tusk\Contracts\Attributes\AsJob;
+use Tusk\Contracts\Attributes\OnJobEnd;
+use Tusk\Contracts\Attributes\OnJobStart;
 use Tusk\Contracts\Attributes\OnRequestEnd;
 use Tusk\Contracts\Attributes\OnRequestStart;
 use Tusk\Contracts\Attributes\OnShutdown;
@@ -19,6 +22,7 @@ use Tusk\Contracts\Attributes\OnStart;
 use Tusk\Contracts\Attributes\OnWorkerStart;
 use Tusk\Contracts\Attributes\OnWorkerStop;
 use Tusk\Contracts\Attributes\Service;
+use Tusk\Contracts\Runtime\Jobs\JobHandlerInterface;
 
 class ServiceScanner
 {
@@ -64,11 +68,16 @@ class ServiceScanner
                             if ($reflection->isInstantiable()) {
                                 $serviceAttributes = $reflection->getAttributes(Service::class);
                                 $factoryAttributes = $reflection->getAttributes(Factory::class);
+                                $jobAttributes = $reflection->getAttributes(AsJob::class);
 
-                                if (! empty($serviceAttributes) || ! empty($factoryAttributes)) {
+                                if (! empty($serviceAttributes) || ! empty($factoryAttributes) || (! empty($jobAttributes) && $reflection->implementsInterface(JobHandlerInterface::class))) {
                                     $isFactory = ! empty($factoryAttributes);
 
-                                    if ($isFactory) {
+                                    if (! empty($jobAttributes)) {
+                                        $provides = $className;
+                                        $scope = 'job';
+                                        $isFactory = false;
+                                    } elseif ($isFactory) {
                                         /** @var Factory $attr */
                                         $attr = $factoryAttributes[0]->newInstance();
                                         $provides = $attr->provides;
@@ -103,6 +112,8 @@ class ServiceScanner
                                         OnWorkerStart::class => 'worker.start',
                                         OnRequestStart::class => 'request.start',
                                         OnRequestEnd::class => 'request.end',
+                                        OnJobStart::class => 'job.start',
+                                        OnJobEnd::class => 'job.end',
                                         OnWorkerStop::class => 'worker.stop',
                                         OnShutdown::class => 'application.stop',
                                     ];
@@ -123,7 +134,12 @@ class ServiceScanner
                                         'scope' => $scope,
                                         'dependencies' => $dependencies,
                                         'optional_dependencies' => $optionalDependencies,
-                                        'interfaces' => $reflection->getInterfaceNames(),
+                                        'interfaces' => empty($jobAttributes)
+                                            ? $reflection->getInterfaceNames()
+                                            : array_values(array_filter(
+                                                $reflection->getInterfaceNames(),
+                                                static fn (string $interface): bool => $interface !== JobHandlerInterface::class,
+                                            )),
                                         'hooks' => $hooks,
                                     ];
                                 }

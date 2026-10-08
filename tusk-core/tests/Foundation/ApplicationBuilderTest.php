@@ -9,6 +9,7 @@ use Tusk\Config\Repository;
 use Tusk\Contracts\Observability\TelemetryProviderInterface;
 use Tusk\Foundation\Application;
 use Tusk\Runtime\Observability\RuntimeObservability;
+use Tusk\Runtime\Jobs\JobHandlerRegistry;
 use Tusk\Web\HttpKernel;
 use Tusk\Web\Router\Router;
 
@@ -108,6 +109,55 @@ PHP);
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('bootstrap/missing.php');
         Application::configure($this->basePath)->withProviders(['bootstrap/missing.php'])->create();
+    }
+
+    public function test_with_jobs_compiles_registry_and_registers_handler(): void
+    {
+        mkdir($this->basePath.'/app/Jobs', 0777, true);
+        file_put_contents($this->basePath.'/app/Jobs/Welcome.php', <<<'PHP'
+<?php
+namespace TuskBuilderJobs;
+#[\Tusk\Contracts\Attributes\AsJob('mail.welcome')]
+final class Welcome implements \Tusk\Contracts\Runtime\Jobs\JobHandlerInterface
+{
+    public function handle(\Tusk\Contracts\Runtime\Jobs\JobContext $job): void {}
+}
+PHP);
+
+        try {
+            $application = Application::configure($this->basePath)->withJobs('app/Jobs')->create();
+            $container = $application->container();
+            self::assertSame('TuskBuilderJobs\\Welcome', $container->get(JobHandlerRegistry::class)->handlerClass('mail.welcome'));
+            self::assertTrue($container->has('TuskBuilderJobs\\Welcome'));
+            self::assertSame('job', $container->export()['scopes']['TuskBuilderJobs\\Welcome']);
+        } finally {
+            unlink($this->basePath.'/app/Jobs/Welcome.php');
+            rmdir($this->basePath.'/app/Jobs');
+            rmdir($this->basePath.'/app');
+        }
+    }
+
+    public function test_with_jobs_accepts_absolute_scan_root(): void
+    {
+        mkdir($this->basePath.'/app/Jobs', 0777, true);
+        file_put_contents($this->basePath.'/app/Jobs/Absolute.php', <<<'PHP'
+<?php
+namespace TuskBuilderAbsoluteJobs;
+#[\Tusk\Contracts\Attributes\AsJob('mail.absolute')]
+final class Absolute implements \Tusk\Contracts\Runtime\Jobs\JobHandlerInterface
+{
+    public function handle(\Tusk\Contracts\Runtime\Jobs\JobContext $job): void {}
+}
+PHP);
+
+        try {
+            $application = Application::configure($this->basePath)->withJobs($this->basePath.'/app/Jobs')->create();
+            self::assertSame('TuskBuilderAbsoluteJobs\\Absolute', $application->container()->get(JobHandlerRegistry::class)->handlerClass('mail.absolute'));
+        } finally {
+            unlink($this->basePath.'/app/Jobs/Absolute.php');
+            rmdir($this->basePath.'/app/Jobs');
+            rmdir($this->basePath.'/app');
+        }
     }
 }
 

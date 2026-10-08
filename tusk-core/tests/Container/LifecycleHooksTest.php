@@ -3,12 +3,17 @@
 namespace Tusk\Core\Tests\Container;
 
 use PHPUnit\Framework\TestCase;
+use Tusk\Contracts\Attributes\AsJob;
+use Tusk\Contracts\Attributes\OnJobEnd;
+use Tusk\Contracts\Attributes\OnJobStart;
 use Tusk\Contracts\Attributes\OnRequestEnd;
 use Tusk\Contracts\Attributes\OnRequestStart;
 use Tusk\Contracts\Attributes\OnWorkerStart;
 use Tusk\Contracts\Attributes\OnWorkerStop;
 use Tusk\Contracts\Attributes\Service;
 use Tusk\Core\Container\Container;
+use Tusk\Contracts\Runtime\Jobs\JobContext;
+use Tusk\Contracts\Runtime\Jobs\JobHandlerInterface;
 
 #[Service(scope: 'worker')]
 final class LifecycleHookService
@@ -61,8 +66,41 @@ final class FailingTeardownService
     }
 }
 
+#[AsJob('test.lifecycle')]
+final class LifecycleJobHandler implements JobHandlerInterface
+{
+    public array $events = [];
+
+    #[OnJobStart]
+    public function start(): void { $this->events[] = 'start'; }
+
+    public function handle(JobContext $job): void { $this->events[] = 'handle'; }
+
+    #[OnJobEnd]
+    public function end(): void { $this->events[] = 'end'; }
+}
+
 final class LifecycleHooksTest extends TestCase
 {
+    public function test_job_hooks_are_distinct_and_job_scope_is_reset_between_deliveries(): void
+    {
+        $container = new Container;
+        $container->register(LifecycleJobHandler::class);
+        $container->runLifecycleHooks('job.start');
+        $first = $container->get(LifecycleJobHandler::class);
+        $first->handle(new JobContext('1', 'queue', 'test.lifecycle', '{}', []));
+        $container->runLifecycleHooks('job.end');
+
+        self::assertSame(['start', 'handle', 'end'], $first->events);
+        $container->resetScope('job');
+        $container->runLifecycleHooks('request.start');
+        $container->runLifecycleHooks('job.start');
+
+        $second = $container->get(LifecycleJobHandler::class);
+        self::assertNotSame($first, $second);
+        self::assertSame(['start'], $second->events);
+    }
+
     public function test_interpreted_container_resolves_hooks_lazily_and_invokes_them(): void
     {
         $container = new Container();

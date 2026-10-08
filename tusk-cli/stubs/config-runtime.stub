@@ -1,0 +1,13 @@
+<?php
+
+return [
+    'runtime' => [
+        'modules' => ['http', 'capabilities.jobs'],
+        'jobs' => [
+            'retry' => [
+                'max_attempts' => 3,
+                'delay_seconds' => 1,
+            ],
+        ],
+    ],
+];

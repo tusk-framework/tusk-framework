@@ -42,7 +42,7 @@ Framework API decisions for this implementation:
 - Create immutable `JobContext` exposing `id(): string`, `queue(): string`, `name(): string`, `payload(): string`, `headers(): array` (`array<string,string>`), and `jsonPayload(): array` (`array<string,mixed>`); require a JSON object and decode with `JSON_THROW_ON_ERROR`, translating parse/type errors to a clear non-retryable payload exception.
 - Create class attribute `Tusk\Contracts\Attributes\AsJob(string $name)`. A class with this attribute is registered in the container with `job` scope; its class must implement `JobHandlerInterface`.
 - Create a compiled `JobHandlerRegistry` keyed by stable job name. `ApplicationBuilder::withJobs(string ...$directories): self` selects scan roots; duplicate/invalid names fail application creation.
-- Expand `JobTaskInterface` to expose `message(): QueueMessageInterface`, `acknowledge(): void`, `retry(?int $delaySeconds = null): void`, and `fail(string $reason): void`. The RoadRunner adapter maps message metadata and these operations to the SDK task API; only bounded, sanitized reasons are sent to transport.
+- Expand `JobTaskInterface` to expose `message(): QueueMessageInterface`, `attempt(): int`, `acknowledge(): void`, `retry(?int $delaySeconds = null): void`, and `fail(string $reason): void`. The RoadRunner adapter maps message metadata and these operations to the SDK task API; only bounded, sanitized reasons are sent to transport.
 - Framework retry config uses `runtime.jobs.retry.max_attempts` (positive integer, default `3`) and `runtime.jobs.retry.delay_seconds` (non-negative integer, default `1`). The first delivery is attempt 1; Tusk stores the next attempt in a reserved RoadRunner task header, and once the configured attempts are exhausted it calls `fail` without requeue.
 - Add `LifecycleEvent::JOB_START` / `JOB_END`, `OnJobStart` / `OnJobEnd` attributes, and observer callbacks only if required by the existing observer contract; no job is routed through request hooks.
 - `RR_MODE` is read by the Framework runtime mode selector; absent means `http` for backward compatibility. Only `http` and `jobs` are accepted.
@@ -56,8 +56,8 @@ Engine API decisions:
 
 ## PR and Branch Sequence
 
-1. **Framework PR:** contract, registry, lifecycle, RoadRunner Jobs worker mode, skeleton, unit/integration tests, and migration documentation. Keep legacy queue and command.
-2. **Engine PR:** typed Jobs configuration, deterministic RoadRunner projection, validation/redaction, and Engine-managed end-to-end smoke test against the merged Framework commit.
+1. **Framework PR:** contract, registry, lifecycle, RoadRunner Jobs worker mode, skeleton, unit/integration tests, and migration documentation. Keep legacy queue and command. This PR provides the PHP consumer API but is not the production-ready Jobs integration by itself; the Engine-generated RoadRunner config must include Jobs pipelines before Engine-managed apps can consume.
+2. **Engine PR:** typed Jobs configuration, deterministic RoadRunner projection, validation/redaction, and Engine-managed end-to-end smoke test against the merged Framework commit. Do not claim the combined Framework+Engine Jobs workflow is ready until the generated config includes `jobs.consume`/`jobs.pipelines` and the smoke passes dispatch, consumption, retry, and graceful shutdown.
 3. **Framework cleanup PR:** only after PRs 1 and 2 are merged and the smoke is green; remove the old command/database queue and update docs/dependencies. No implementation task may skip this gate.
 
 Each PR gets focused tests, full relevant CI, a structured description (goal, implementation, validation, risk/rollback), and review before merge.
@@ -73,19 +73,20 @@ Each PR gets focused tests, full relevant CI, a structured description (goal, im
 - Create: `tusk-contracts/src/Runtime/Jobs/JobPayloadException.php`
 - Create: `tusk-runtime/src/Jobs/JobHandlerRegistry.php`
 - Create: `tusk-runtime/src/Jobs/JobHandlerScanner.php`
-- Modify: `tusk-contracts/src/Runtime/Capabilities/JobTaskInterface.php`
+- Modify: `tusk-core/src/Container/Container.php` to recognize `#[AsJob]` and register it with `job` scope
 - Modify: `tusk-core/src/Foundation/ApplicationBuilder.php`
-- Test: `tusk-runtime/tests/Jobs/JobContextTest.php`, `tusk-runtime/tests/Jobs/JobHandlerScannerTest.php`, and `tusk-core/tests/Foundation/ApplicationBuilderTest.php`
+- Test: `tusk-runtime/tests/Jobs/JobContextTest.php`, `tusk-runtime/tests/Jobs/JobHandlerScannerTest.php`, `tusk-core/tests/Container/ContainerRegistrationTest.php`, and `tusk-core/tests/Foundation/ApplicationBuilderTest.php`
 
 **Interfaces:**
 - Produces the public contracts and registry specified in “File Map and Public Interfaces”.
 - `JobHandlerRegistry::handlerClass(string $name): string` returns only a registered class and throws a typed unknown-job exception otherwise.
+- The typed exception is `Tusk\Runtime\Jobs\UnknownJobException`; it never includes payload contents.
 - `ApplicationBuilder::withJobs(string ...$directories): self` records scan roots; `create()` compiles the registry and binds it to the container before returning the application.
 
-- [ ] **Step 1: Write failing context and scanner tests** for valid JSON object access, invalid JSON, JSON scalar/list rejection, stable-name trimming/validation, duplicate names, non-handler class rejection, and valid handler resolution.
-- [ ] **Step 2: Run the focused tests** with `composer test -- tusk-runtime/tests/Jobs/JobContextTest.php tusk-runtime/tests/Jobs/JobHandlerScannerTest.php`; confirm failures are due to missing API/behavior.
-- [ ] **Step 3: Implement the contracts, typed exceptions, scanner, registry, and builder registration** at the paths above; register discovered handlers with `job` scope and never trust a class name from task data.
-- [ ] **Step 4: Run focused tests and container tests** with `composer test -- tusk-runtime/tests/Jobs tusk-core/tests/Foundation/ApplicationBuilderTest.php tusk-core/tests/Container`; expect all PASS.
+- [ ] **Step 1: Write failing context, scanner, and container tests** for valid JSON object access, invalid JSON, JSON scalar/list rejection, stable-name trimming/validation, duplicate names, non-handler class rejection, valid handler resolution, and `#[AsJob]` registration in `job` scope.
+- [ ] **Step 2: Run the focused tests** with `vendor/bin/phpunit tusk-runtime/tests/Jobs/JobContextTest.php tusk-runtime/tests/Jobs/JobHandlerScannerTest.php`; confirm failures are due to missing API/behavior.
+- [ ] **Step 3: Implement the contracts, `UnknownJobException`, scanner, registry, `Container::register()` support for `#[AsJob]`, and builder registration** at the paths above; register discovered handlers with `job` scope and never trust a class name from task data.
+- [ ] **Step 4: Run focused tests and container tests** with `vendor/bin/phpunit tusk-runtime/tests/Jobs tusk-core/tests/Foundation/ApplicationBuilderTest.php tusk-core/tests/Container`; expect all PASS.
 - [ ] **Step 5: Commit** as `feat: add named job handler registry`.
 
 ### Task 2: Job lifecycle, hooks, scope reset, and observability
@@ -94,16 +95,20 @@ Each PR gets focused tests, full relevant CI, a structured description (goal, im
 - Modify: `tusk-contracts/src/Runtime/LifecycleEvent.php`
 - Create: `tusk-contracts/src/Attributes/OnJobStart.php`, `tusk-contracts/src/Attributes/OnJobEnd.php`
 - Modify: `tusk-core/src/Container/Container.php`, `tusk-core/src/Container/ServiceScanner.php`, `tusk-core/src/Container/ContainerCompiler.php`
+- Modify: `tusk-contracts/src/Runtime/LifecycleManagerInterface.php`
 - Modify: `tusk-runtime/src/LifecycleManager.php`, `tusk-runtime/src/Observability/LifecycleObserverInterface.php`, `tusk-runtime/src/Observability/RuntimeObservability.php`
 - Test: `tusk-core/tests/Container/LifecycleHooksTest.php`, `tusk-core/tests/Container/ContainerCompilerTest.php`, `tusk-runtime/tests/LifecycleManagerTest.php`, `tusk-runtime/tests/Observability/RuntimeObservabilityTest.php`
 
 **Interfaces:**
 - Consumes `JobContext` and the task/handler contracts from Task 1.
 - Produces job-start/end hooks and a per-job lifecycle boundary that resets `job` scope in `finally`; HTTP request lifecycle stays unchanged.
+- `LifecycleManagerInterface` adds `jobStart(JobContext $job): void` and `jobEnd(?Throwable $exception = null): void`; `LifecycleObserverInterface` adds matching `jobStarted(string $name, ?string $id = null): void` and `jobFinished(bool $success, ?Throwable $exception = null): void` callbacks. `jobEnd()` must run end hooks, emit one completion callback, and reset the `job` scope even if one cleanup action throws, preserving the first failure.
+- `ServiceScanner` recognizes `#[AsJob]` as a `job`-scoped definition so compiled containers can resolve the handlers registered by Task 1; `ContainerCompiler` caches and resets that scope.
+- For `#[AsJob]` definitions, preserve aliases for implemented application interfaces but omit the shared `JobHandlerInterface` alias (multiple named jobs cannot safely bind to one shared interface).
 
-- [ ] **Step 1: Add failing tests** proving job hooks execute in order, `job`-scoped services are new for each delivery in dynamic and compiled containers, reset occurs after a handler exception, and existing request hooks remain unchanged.
-- [ ] **Step 2: Run those focused tests** with `composer test -- tusk-core/tests/Container tusk-runtime/tests/LifecycleManagerTest.php`; confirm the new assertions fail on current behavior.
-- [ ] **Step 3: Implement job events and hook discovery** consistently in dynamic container, scanner, and compiled container; make job cleanup preserve the first failure while reporting cleanup failures secondarily.
+- [ ] **Step 1: Add failing tests** proving lifecycle start/end observer callbacks receive stable job name/id and outcome, job hooks execute in order, `#[AsJob]` handlers are discovered as `job` scoped, job-scoped services are new for each delivery in dynamic and compiled containers, reset occurs after a handler exception, and existing request hooks remain unchanged.
+- [ ] **Step 2: Run those focused tests** with `vendor/bin/phpunit tusk-core/tests/Container tusk-runtime/tests/LifecycleManagerTest.php`; confirm the new assertions fail on current behavior.
+- [ ] **Step 3: Implement job lifecycle methods/hooks and `#[AsJob]` discovery** consistently in dynamic container, scanner, and compiled container; make job cleanup preserve the first failure while reporting cleanup failures secondarily.
 - [ ] **Step 4: Add observability assertions** for one start and one finish per delivery, bounded-cardinality job name only, no raw payload/header labels, then run the focused suite; expect PASS.
 - [ ] **Step 5: Commit** as `feat: add isolated job lifecycle`.
 
@@ -111,21 +116,31 @@ Each PR gets focused tests, full relevant CI, a structured description (goal, im
 
 **Files:**
 - Modify: `tusk-runtime/src/RoadRunner/RoadRunnerJobTask.php`
+- Modify: `tusk-runtime/src/RoadRunner/RoadRunnerJobMessage.php`
+- Modify: `tusk-runtime/src/RoadRunner/RoadRunnerJobs.php` to reserve the internal attempt header on producer input
 - Modify: `tusk-runtime/src/RoadRunner/RoadRunnerJobsModule.php`
+- Modify: `tusk-contracts/src/Runtime/Capabilities/JobTaskInterface.php`
 - Create: `tusk-runtime/src/Jobs/JobProcessor.php`
 - Create: `tusk-runtime/src/Jobs/JobRetryConfiguration.php`
 - Modify: `tusk-runtime/src/RuntimeConfiguration.php`
 - Test: `tusk-runtime/tests/RoadRunner/RoadRunnerJobTaskTest.php`, `tusk-runtime/tests/RoadRunner/RoadRunnerJobsModuleTest.php`, and new `tusk-runtime/tests/Jobs/JobProcessorTest.php`
+- Test: `tusk-runtime/tests/RoadRunner/RoadRunnerJobsTest.php` for reserved-header rejection
 
 **Interfaces:**
 - Consumes `JobContext`, `JobHandlerRegistry`, and lifecycle from Tasks 1–2.
-- `JobProcessor::process(JobTaskInterface $task): void` resolves the named handler, creates a context, invokes it inside job lifecycle/scope, acks once after success, retries bounded handler exceptions, and fails poison/exhausted tasks without requeue.
+- Expands `JobTaskInterface` with `message(): QueueMessageInterface` and `fail(string $reason): void`; update the RoadRunner adapter and its tests in this task so the interface and its existing implementation remain compatible in every commit.
+- For the supported `spiral/roadrunner-jobs` ^4.6.3 API, map `acknowledge()` to `ReceivedTaskInterface::ack()`, retry to `withHeader('x-tusk-attempt', nextAttempt)->withDelay(...)->requeue(safeReason)`, and terminal `fail()` to `nack(safeReason, redelivery: false)`. Do not call deprecated `complete()` / `fail()` SDK methods.
+- `RoadRunnerJobMessage::fromReceivedTask(ReceivedTaskInterface $task): self` uses `getId()`, `getPipeline()` (consistent with producer queue metadata), `getName()`, `getPayload()`, and flattened string headers. The public header map excludes internal `x-tusk-attempt`; `RoadRunnerJobs` rejects callers supplying that name case-insensitively.
+- The consumer attempt is 1 when the internal header is absent; otherwise it must be a positive decimal integer. Malformed/non-positive attempt metadata fails terminally. Retry increments it exactly once. This header is Framework-reserved, not application metadata.
+- `JobProcessor::process(JobTaskInterface $task): void` validates `JobContext::jsonPayload()` before handler invocation (malformed/non-object JSON is terminal), resolves the named handler, invokes it inside job lifecycle/scope, acks once after success, retries bounded handler exceptions, and fails poison/exhausted tasks without requeue.
+- `JobProcessor::__construct(ContainerInterface $container, JobHandlerRegistry $registry, LifecycleManagerInterface $lifecycle, JobRetryConfiguration $retry, ?LoggerInterface $logger = null)`; `RoadRunnerJobsModule::__construct(JobProcessor $processor)` and `handle(JobTaskInterface $task): void` delegate one task to it. `JobRetryConfiguration::fromArray(array $configuration): self` exposes `maxAttempts(): int` and `delaySeconds(): int`; `RuntimeConfiguration::jobRetry(): JobRetryConfiguration` supplies it.
+- After retry or terminal nack succeeds, the processor catches only the same original job exception rethrown by `LifecycleManager::jobEnd($exception)` and returns normally; if retry/nack or lifecycle cleanup fails, preserve/propagate the primary failure. This prevents a handled job exception from escaping into RoadRunner's worker loop and bypassing Tusk's bounded retry policy.
 - RoadRunner task adapter maps SDK `ReceivedTaskInterface` metadata, ack, delay/requeue, and nack operations to the Tusk task contract.
 
-- [ ] **Step 1: Write failing adapter/processor tests** for task metadata conversion, ack only on success, first delivery then one retry then success, exhaustion without requeue, unknown name, invalid JSON, and retry transport failure preserving the handler exception.
-- [ ] **Step 2: Run the focused tests** with `composer test -- tusk-runtime/tests/Jobs/JobProcessorTest.php tusk-runtime/tests/RoadRunner/RoadRunnerJobTaskTest.php tusk-runtime/tests/RoadRunner/RoadRunnerJobsModuleTest.php`; confirm expected failures.
-- [ ] **Step 3: Implement retry configuration and processor** with default `max_attempts=3`, `delay_seconds=1`, attempt 1 on first delivery, a reserved attempt header, no automatic retry for poison messages, and one terminal `fail` after exhaustion.
-- [ ] **Step 4: Verify all ack/retry/fail paths and exception precedence** in tests; run `composer test -- tusk-runtime/tests/Jobs tusk-runtime/tests/RoadRunner`; expect PASS.
+- [ ] **Step 1: Write failing adapter/processor tests** for task metadata conversion (pipeline and multivalue headers), reserved-header rejection/filtering, `ack()` on success, exactly-once attempt header increment on requeue, terminal `nack(..., false)`, first delivery then one retry then success, exhaustion, malformed attempt header, unknown name, invalid JSON, and retry transport failure preserving the handler exception.
+- [ ] **Step 2: Run the focused tests** with `vendor/bin/phpunit tusk-runtime/tests/Jobs/JobProcessorTest.php tusk-runtime/tests/RoadRunner/RoadRunnerJobTaskTest.php tusk-runtime/tests/RoadRunner/RoadRunnerJobsModuleTest.php tusk-runtime/tests/RoadRunner/RoadRunnerJobsTest.php`; confirm expected failures.
+- [ ] **Step 3: Implement retry configuration and processor** with default `max_attempts=3`, `delay_seconds=1`, attempt 1 on first delivery, reserved `x-tusk-attempt` metadata, no automatic retry for poison messages, and one terminal failure after exhaustion; map operations to SDK `ack()`, `requeue()`, and `nack()`.
+- [ ] **Step 4: Verify all ack/retry/fail paths and exception precedence** in tests; run `vendor/bin/phpunit tusk-runtime/tests/Jobs tusk-runtime/tests/RoadRunner`; expect PASS.
 - [ ] **Step 5: Commit** as `feat: process RoadRunner job tasks`.
 
 ### Task 4: RR mode selection, worker wiring, skeleton, and Framework docs
@@ -139,14 +154,15 @@ Each PR gets focused tests, full relevant CI, a structured description (goal, im
 
 **Interfaces:**
 - Consumes Tasks 1–3.
-- `RuntimeModeFactory::create(string $mode, ...)` selects HTTP or Jobs mode from `RR_MODE`, defaulting to HTTP; Jobs mode starts the RoadRunner consumer loop and never wraps tasks in request hooks.
+- Keep `RuntimeAdapterFactory` as the RoadRunner runtime selector and add an explicit execution-mode selector (HTTP or Jobs) driven by `RR_MODE`, defaulting to HTTP. `RoadRunnerAdapter` remains the sole runtime boundary and delegates to an injectable HTTP or Jobs loop; Jobs mode starts the RoadRunner consumer loop and never wraps tasks in request hooks.
+- The `Kernel` owns one `LifecycleManager` shared with `JobProcessor`; resolve/bind the runtime observability module before constructing that lifecycle. Construct the processor only after `ApplicationBuilder` has bound the compiled `JobHandlerRegistry`, and inject it into the Jobs loop. Do not create a second lifecycle manager or worker/process supervisor.
 - Skeleton exposes `app/Jobs`, `#[AsJob]`, `JobHandlerInterface`, `withJobs(__DIR__.'/../app/Jobs')`, producer example using JSON, and retry config with the documented defaults.
 
 - [ ] **Step 1: Write failing worker-mode tests** for absent/`http` mode, `jobs` mode, unsupported mode, no HTTP request lifecycle in Jobs mode, and unchanged existing HTTP adapter behavior.
-- [ ] **Step 2: Run focused tests** with `composer test -- tusk-runtime/tests/RuntimeAdapterFactoryTest.php tusk-runtime/tests/KernelTest.php tusk-cli/tests/Generator/ProjectGeneratorTest.php`; confirm Jobs mode is not wired.
+- [ ] **Step 2: Run focused tests** with `vendor/bin/phpunit tusk-runtime/tests/RuntimeAdapterFactoryTest.php tusk-runtime/tests/KernelTest.php tusk-cli/tests/Generator/ProjectGeneratorTest.php`; confirm Jobs mode is not wired.
 - [ ] **Step 3: Implement mode dispatch and consumer loop** using RoadRunner `Consumer::waitTask()`; preserve same worker entry point and ensure shutdown exits the loop through Engine/RoadRunner worker lifecycle.
 - [ ] **Step 4: Extend generated skeleton and docs** with a compilable named-job example and migration notes for at-least-once delivery, idempotency, JSON payloads, retry bounds, and driver-specific failed-message behavior.
-- [ ] **Step 5: Run Framework gates** (`composer test`, `composer analyse`, and the repository's formatter/lint command); record any pre-existing findings separately and confirm no new failures.
+- [ ] **Step 5: Run Framework gates** (`vendor/bin/phpunit --testdox`, `vendor/bin/phpstan analyse`, and `vendor/bin/pint --test`); record any pre-existing findings separately and confirm no new failures.
 - [ ] **Step 6: Commit, open the Framework PR, and wait for green CI/review** before starting Engine implementation; retain all legacy queue files in this PR.
 
 ## Phase 2 — Engine Configuration and Integration PR
@@ -212,12 +228,12 @@ Each PR gets focused tests, full relevant CI, a structured description (goal, im
 - [ ] **Step 2: Add/update architecture contract tests** proving producer capability remains and no legacy command/API is exposed after cleanup.
 - [ ] **Step 3: Remove the legacy implementation and only verified-unused dependencies/schema**; preserve general database/event components.
 - [ ] **Step 4: Update migration docs** with old class/array payload to named handler/JSON payload mapping, at-least-once/idempotency warning, retry behavior, and driver-specific failed-message handling.
-- [ ] **Step 5: Run Framework full test, static analysis, formatter, package dependency checks, and the Engine-managed smoke again**; verify the old `while.alwaysTrue` PHPStan finding disappears because its command was removed, not suppressed.
+- [ ] **Step 5: Run Framework full test, static analysis, formatter, package dependency checks, and the Engine-managed smoke again** (`vendor/bin/phpunit --testdox`, `vendor/bin/phpstan analyse`, `vendor/bin/pint --test`); verify the old `while.alwaysTrue` PHPStan finding disappears because its command was removed, not suppressed.
 - [ ] **Step 6: Open cleanup PR, wait for all checks/review, then merge only when green**; add an explicit breaking-change release note.
 
 ## Final Verification and Whole-Branch Review
 
-- [ ] Run Framework tests, PHPStan, formatting, and Composer validation after all three PRs are merged.
+- [ ] Run Framework tests, PHPStan, formatting, and Composer validation after all three PRs are merged (`vendor/bin/phpunit --testdox`, `vendor/bin/phpstan analyse`, `vendor/bin/pint --test`, `composer validate --strict`).
 - [ ] Run Engine Go tests, race detector where toolchain support is available, and the real RoadRunner skeleton smoke.
 - [ ] Confirm HTTP-only applications produce unchanged behavior/configuration and Jobs config does not leak secret values in logs/errors.
 - [ ] Confirm no `QueueWorkerCommand`, `queue:work`, or `Tusk\Events\Queue` references remain except migration documentation/history.

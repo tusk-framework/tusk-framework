@@ -8,6 +8,7 @@ use Throwable;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Runtime\LifecycleEvent;
 use Tusk\Contracts\Runtime\LifecycleManagerInterface;
+use Tusk\Contracts\Runtime\Jobs\JobContext;
 use Tusk\Runtime\Observability\LifecycleObserverInterface;
 use Tusk\Runtime\Observability\RequestScopeObserverInterface;
 
@@ -18,6 +19,8 @@ final class LifecycleManager implements LifecycleManagerInterface
     private bool $workerStarted = false;
 
     private bool $requestStarted = false;
+
+    private bool $jobStarted = false;
 
     public function __construct(
         private readonly ContainerInterface $container,
@@ -71,6 +74,69 @@ final class LifecycleManager implements LifecycleManagerInterface
         $this->finishRequest(null, null);
     }
 
+    public function jobStart(JobContext $job): void
+    {
+        if (! $this->workerStarted) {
+            throw new LogicException('Cannot start a job before the worker has started.');
+        }
+
+        if ($this->jobStarted) {
+            throw new LogicException('A job is already active.');
+        }
+
+        $this->jobStarted = true;
+        $this->notifyObserver(fn () => $this->observer?->jobStarted($job->name(), $job->id()));
+
+        try {
+            $this->runHook(LifecycleEvent::JOB_START);
+        } catch (Throwable $exception) {
+            $this->jobEnd($exception);
+        }
+    }
+
+    public function jobEnd(?Throwable $exception = null): void
+    {
+        if (! $this->jobStarted) {
+            return;
+        }
+
+        $this->jobStarted = false;
+        $failure = $exception;
+
+        try {
+            $this->runHook(LifecycleEvent::JOB_END);
+        } catch (Throwable $cleanupException) {
+            if ($failure !== null) {
+                $this->reportSecondaryJobFailure($cleanupException);
+            }
+            $failure ??= $cleanupException;
+        } finally {
+            try {
+                $this->container->resetScope('job');
+            } catch (Throwable $cleanupException) {
+                if ($failure !== null) {
+                    $this->reportSecondaryJobFailure($cleanupException);
+                }
+                $failure ??= $cleanupException;
+            }
+        }
+
+        $this->notifyObserver(fn () => $this->observer?->jobFinished($failure === null, $failure));
+
+        if ($failure !== null) {
+            throw $failure;
+        }
+    }
+
+    private function reportSecondaryJobFailure(Throwable $exception): void
+    {
+        try {
+            $this->logger?->error('Job cleanup failed after an earlier failure.', ['exception' => $exception]);
+        } catch (Throwable) {
+            // Diagnostic reporting must not replace the primary failure.
+        }
+    }
+
     private function finishRequest(mixed $response, ?Throwable $handlerException): void
     {
         if (! $this->requestStarted) {
@@ -111,6 +177,10 @@ final class LifecycleManager implements LifecycleManagerInterface
 
         if ($this->requestStarted) {
             throw new LogicException('Cannot stop a worker while a request is active.');
+        }
+
+        if ($this->jobStarted) {
+            throw new LogicException('Cannot stop a worker while a job is active.');
         }
 
         $this->workerStarted = false;

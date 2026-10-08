@@ -7,10 +7,11 @@ namespace Tusk\Runtime\RoadRunner;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Runtime\Capabilities\JobTaskInterface;
 use Tusk\Contracts\Runtime\Modules\RuntimeModuleInterface;
+use Tusk\Runtime\Jobs\JobProcessor;
 
 final class RoadRunnerJobsModule implements RuntimeModuleInterface
 {
-    public function __construct(private readonly \Closure $handler) {}
+    public function __construct(private readonly JobProcessor $processor) {}
 
     public function name(): string
     {
@@ -32,8 +33,8 @@ final class RoadRunnerJobsModule implements RuntimeModuleInterface
         // No consumer or worker pool is owned by this module.
     }
 
-    public function handle(JobTaskInterface $task): mixed
+    public function handle(JobTaskInterface $task): void
     {
-        return ($this->handler)($task);
+        $this->processor->process($task);
     }
 }

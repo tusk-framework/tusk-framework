@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tusk\Runtime;
 
 use InvalidArgumentException;
+use Tusk\Config\Env;
+use Tusk\Runtime\Jobs\JobRetryConfiguration;
 use Tusk\Runtime\Observability\ObservabilityConfiguration;
 
 final class RuntimeConfiguration
@@ -27,6 +29,8 @@ final class RuntimeConfiguration
         private readonly string $runtimeAdapter,
         private readonly array $modules,
         private readonly ObservabilityConfiguration $observability,
+        private readonly JobRetryConfiguration $jobRetry,
+        private readonly string $executionMode,
     ) {}
 
     public static function fromArray(array $config): self
@@ -52,7 +56,28 @@ final class RuntimeConfiguration
             ));
         }
 
+        $configuredMode = Env::get('RR_MODE', $runtime['mode'] ?? 'http');
+        if (! is_string($configuredMode)) {
+            throw new InvalidArgumentException('RoadRunner execution mode must be a string.');
+        }
+        $mode = strtolower(trim($configuredMode));
+        if (! in_array($mode, ['http', 'jobs'], true)) {
+            throw new InvalidArgumentException(sprintf(
+                'Unsupported RoadRunner execution mode "%s". Supported RoadRunner modes: http, jobs.',
+                $mode,
+            ));
+        }
+
         $modules = $runtime['modules'] ?? ['http'];
+
+        $jobs = $runtime['jobs'] ?? [];
+        if (! is_array($jobs)) {
+            throw new InvalidArgumentException('The runtime jobs configuration must be an array.');
+        }
+        $retry = $jobs['retry'] ?? [];
+        if (! is_array($retry)) {
+            throw new InvalidArgumentException('The runtime jobs retry configuration must be an array.');
+        }
 
         if (! is_array($modules)) {
             throw new InvalidArgumentException('The runtime modules configuration must be an array.');
@@ -76,7 +101,7 @@ final class RuntimeConfiguration
             }
         }
 
-        return new self($adapter, $normalized, ObservabilityConfiguration::fromArray($observability));
+        return new self($adapter, $normalized, ObservabilityConfiguration::fromArray($observability), JobRetryConfiguration::fromArray($retry), $mode);
     }
 
     public function adapter(): string
@@ -95,5 +120,15 @@ final class RuntimeConfiguration
     public function observability(): ObservabilityConfiguration
     {
         return $this->observability;
+    }
+
+    public function jobRetry(): JobRetryConfiguration
+    {
+        return $this->jobRetry;
+    }
+
+    public function executionMode(): string
+    {
+        return $this->executionMode;
     }
 }

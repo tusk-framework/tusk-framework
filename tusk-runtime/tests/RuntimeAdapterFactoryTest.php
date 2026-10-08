@@ -14,7 +14,8 @@ final class RuntimeAdapterFactoryTest extends TestCase
     protected function tearDown(): void
     {
         putenv('TUSK_RUNTIME');
-        unset($_ENV['TUSK_RUNTIME'], $_SERVER['TUSK_RUNTIME']);
+        putenv('RR_MODE');
+        unset($_ENV['TUSK_RUNTIME'], $_SERVER['TUSK_RUNTIME'], $_ENV['RR_MODE'], $_SERVER['RR_MODE']);
     }
 
     public function test_roadrunner_is_the_default_runtime(): void
@@ -22,6 +23,7 @@ final class RuntimeAdapterFactoryTest extends TestCase
         $adapter = RuntimeAdapterFactory::create();
 
         self::assertInstanceOf(RoadRunnerAdapter::class, $adapter);
+        self::assertSame('http', $adapter->mode());
     }
 
     public function test_roadrunner_alias_is_the_only_explicit_runtime_selection(): void

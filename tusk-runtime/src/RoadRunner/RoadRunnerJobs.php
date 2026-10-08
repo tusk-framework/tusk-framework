@@ -16,8 +16,9 @@ final class RoadRunnerJobs implements TuskQueueInterface
 
     public function dispatch(string $queue, string $name, string $payload, array $headers = []): QueueMessageInterface
     {
+        $options = $this->options($headers);
         $roadRunnerQueue = $this->queue($queue);
-        $prepared = $roadRunnerQueue->create($name, $payload, $this->options($headers));
+        $prepared = $roadRunnerQueue->create($name, $payload, $options);
         $queued = $roadRunnerQueue->dispatch($prepared);
 
         return RoadRunnerJobMessage::fromQueuedTask($queued);
@@ -25,7 +26,8 @@ final class RoadRunnerJobs implements TuskQueueInterface
 
     public function create(string $queue, string $name, string $payload, array $headers = []): QueueMessageInterface
     {
-        $prepared = $this->queue($queue)->create($name, $payload, $this->options($headers));
+        $options = $this->options($headers);
+        $prepared = $this->queue($queue)->create($name, $payload, $options);
 
         return RoadRunnerJobMessage::fromPreparedTask($queue, $prepared);
     }
@@ -43,6 +45,9 @@ final class RoadRunnerJobs implements TuskQueueInterface
         $options = new Options;
 
         foreach ($headers as $name => $value) {
+            if (strcasecmp($name, 'x-tusk-attempt') === 0) {
+                throw new \InvalidArgumentException('The x-tusk-attempt header is reserved for the framework.');
+            }
             $options = $options->withHeader($name, $value);
         }
 

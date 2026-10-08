@@ -2,6 +2,7 @@
 
 namespace Tusk\Runtime\Tests\RoadRunner;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use Spiral\RoadRunner\Jobs\JobsInterface;
 use Spiral\RoadRunner\Jobs\OptionsInterface;
@@ -13,6 +14,21 @@ use Tusk\Runtime\RoadRunner\RoadRunnerJobs;
 
 final class RoadRunnerJobsTest extends TestCase
 {
+    public function test_reserved_attempt_header_is_rejected_before_queue_connection(): void
+    {
+        foreach (['x-tusk-attempt', 'X-Tusk-Attempt'] as $header) {
+            $jobs = $this->createMock(JobsInterface::class);
+            $jobs->expects(self::never())->method('connect');
+            foreach (['create', 'dispatch'] as $operation) {
+                try {
+                    (new RoadRunnerJobs($jobs))->$operation('emails', 'welcome', '{}', [$header => '2']);
+                    self::fail('Expected reserved header rejection.');
+                } catch (InvalidArgumentException) {
+                    // Expected.
+                }
+            }
+        }
+    }
     public function test_dispatch_preserves_queue_payload_and_headers(): void
     {
         $jobs = $this->createMock(JobsInterface::class);

@@ -18,6 +18,25 @@ use Tusk\Runtime\Observability\WorkerDiagnosticsCollector;
 
 final class RuntimeObservabilityTest extends TestCase
 {
+    public function test_failed_job_telemetry_uses_only_bounded_job_name_and_fixed_error_status(): void
+    {
+        $provider = new RecordingTelemetryProvider;
+        $collector = new WorkerDiagnosticsCollector;
+        $observability = new RuntimeObservability($provider, $collector);
+        $failure = new RuntimeException('failed');
+
+        $observability->jobStarted('mail.welcome', 'delivery-1');
+        $observability->jobFinished(false, $failure);
+
+        self::assertSame(['job.name' => 'mail.welcome'], $provider->spans[0]->attributes);
+        self::assertNull($provider->spans[0]->exception);
+        self::assertSame(['error', 'job failed'], $provider->spans[0]->status);
+        self::assertTrue($provider->spans[0]->ended);
+        self::assertSame([['tusk.jobs.total', 1, ['job.name' => 'mail.welcome']]], $provider->increments);
+        self::assertSame(1, $collector->snapshot()->jobsTotal);
+        self::assertSame(1, $collector->snapshot()->jobFailures);
+    }
+
     public function test_it_records_application_worker_request_and_job_boundaries(): void
     {
         $clock = new RuntimeObservabilityClock;
@@ -88,12 +107,17 @@ class RecordingTelemetryProvider implements TelemetryProviderInterface
     /** @var list<RecordingSpan> */
     public array $spans = [];
 
+    public array $increments = [];
+
     public function startSpan(string $name, array $attributes = []): SpanInterface
     {
         return $this->spans[] = new RecordingSpan($name, $attributes);
     }
 
-    public function increment(string $name, int|float $value = 1, array $attributes = []): void {}
+    public function increment(string $name, int|float $value = 1, array $attributes = []): void
+    {
+        $this->increments[] = [$name, $value, $attributes];
+    }
 
     public function observe(string $name, float $value, array $attributes = []): void {}
 

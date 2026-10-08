@@ -5,6 +5,9 @@ namespace Tusk\Core\Container;
 use ReflectionClass;
 use ReflectionException;
 use RuntimeException;
+use Tusk\Contracts\Attributes\AsJob;
+use Tusk\Contracts\Attributes\OnJobEnd;
+use Tusk\Contracts\Attributes\OnJobStart;
 use Tusk\Contracts\Attributes\OnRequestEnd;
 use Tusk\Contracts\Attributes\OnRequestStart;
 use Tusk\Contracts\Attributes\OnShutdown;
@@ -13,6 +16,7 @@ use Tusk\Contracts\Attributes\OnWorkerStart;
 use Tusk\Contracts\Attributes\OnWorkerStop;
 use Tusk\Contracts\Attributes\Service;
 use Tusk\Contracts\Container\ContainerInterface;
+use Tusk\Contracts\Runtime\Jobs\JobHandlerInterface;
 
 class Container implements ContainerInterface
 {
@@ -66,23 +70,28 @@ class Container implements ContainerInterface
             throw new RuntimeException("Failed to reflect class {$className}: ".$e->getMessage(), 0, $e);
         }
 
+        $jobAttributes = $reflection->getAttributes(AsJob::class);
         $attributes = $reflection->getAttributes(Service::class);
 
-        if (empty($attributes)) {
+        if (empty($attributes) && empty($jobAttributes)) {
             return;
         }
 
-        /** @var Service $serviceAttr */
-        $serviceAttr = $attributes[0]->newInstance();
-        $scope = $serviceAttr->scope;
+        if (! empty($jobAttributes) && (! $reflection->isInstantiable() || ! $reflection->implementsInterface(JobHandlerInterface::class))) {
+            throw new RuntimeException('Job handler must be an instantiable JobHandlerInterface: '.$className);
+        }
+
+        $scope = empty($jobAttributes) ? $attributes[0]->newInstance()->scope : 'job';
 
         $this->definitions[$className] = $className;
         $this->scopes[$className] = $scope;
         $this->hooks = array_replace_recursive($this->hooks, [$className => $this->discoverHooks($reflection)]);
 
         // Also register by interface if applicable
-        foreach ($reflection->getInterfaceNames() as $interface) {
-            $this->definitions[$interface] = $className;
+        if (empty($jobAttributes)) {
+            foreach ($reflection->getInterfaceNames() as $interface) {
+                $this->definitions[$interface] = $className;
+            }
         }
     }
 
@@ -181,6 +190,8 @@ class Container implements ContainerInterface
             OnWorkerStart::class => 'worker.start',
             OnRequestStart::class => 'request.start',
             OnRequestEnd::class => 'request.end',
+            OnJobStart::class => 'job.start',
+            OnJobEnd::class => 'job.end',
             OnWorkerStop::class => 'worker.stop',
             OnShutdown::class => 'application.stop',
             default => null,
@@ -246,6 +257,8 @@ class Container implements ContainerInterface
             OnWorkerStart::class => 'worker.start',
             OnRequestStart::class => 'request.start',
             OnRequestEnd::class => 'request.end',
+            OnJobStart::class => 'job.start',
+            OnJobEnd::class => 'job.end',
             OnWorkerStop::class => 'worker.stop',
             OnShutdown::class => 'application.stop',
         ];

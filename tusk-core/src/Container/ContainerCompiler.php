@@ -21,6 +21,7 @@ class ContainerCompiler
         $code .= "    private array \$singletonInstances = [];\n";
         $code .= "    private array \$workerInstances = [];\n";
         $code .= "    private array \$requestInstances = [];\n\n";
+        $code .= "    private array \$jobInstances = [];\n\n";
 
         $code .= "    public function instance(string \$id, object \$instance): void\n    {\n";
         $code .= "        \$this->singletonInstances[\$id] = \$instance;\n    }\n\n";
@@ -32,6 +33,8 @@ class ContainerCompiler
         $code .= "            return \$this->workerInstances[\$id];\n        }\n\n";
         $code .= "        if (isset(\$this->requestInstances[\$id])) {\n";
         $code .= "            return \$this->requestInstances[\$id];\n        }\n\n";
+        $code .= "        if (isset(\$this->jobInstances[\$id])) {\n";
+        $code .= "            return \$this->jobInstances[\$id];\n        }\n\n";
         $code .= "        return match (\$id) {\n";
         $code .= "            TuskContainerInterface::class => \$this,\n";
         $code .= "            ContainerInterface::class => \$this,\n";
@@ -73,6 +76,7 @@ class ContainerCompiler
             $cache = match ($scope) {
                 'worker' => 'workerInstances',
                 'request' => 'requestInstances',
+                'job' => 'jobInstances',
                 'singleton' => 'singletonInstances',
                 default => null,
             };
@@ -115,6 +119,7 @@ class ContainerCompiler
         $code .= "    public function resetScope(string \$scope): void\n    {\n";
         $code .= "        if (\$scope === 'worker') {\n            \$this->workerInstances = [];\n        }\n";
         $code .= "        if (\$scope === 'request') {\n            \$this->requestInstances = [];\n        }\n";
+        $code .= "        if (\$scope === 'job') {\n            \$this->jobInstances = [];\n        }\n";
         $code .= "    }\n\n";
 
         $code .= "    public function runLifecycleHooks(string \$event): void\n    {\n";
@@ -140,6 +145,8 @@ class ContainerCompiler
         $code .= "            'Tusk\\\\Contracts\\\\Attributes\\\\OnWorkerStop' => 'worker.stop',\n";
         $code .= "            'Tusk\\\\Contracts\\\\Attributes\\\\OnRequestStart' => 'request.start',\n";
         $code .= "            'Tusk\\\\Contracts\\\\Attributes\\\\OnRequestEnd' => 'request.end',\n";
+        $code .= "            'Tusk\\\\Contracts\\\\Attributes\\\\OnJobStart' => 'job.start',\n";
+        $code .= "            'Tusk\\\\Contracts\\\\Attributes\\\\OnJobEnd' => 'job.end',\n";
         $code .= "            'Tusk\\\\Contracts\\\\Attributes\\\\OnShutdown' => 'application.stop',\n";
         $code .= "            default => null,\n";
         $code .= "        };\n        if (\$event !== null) {\n            \$this->runLifecycleHooks(\$event);\n        }\n    }\n";

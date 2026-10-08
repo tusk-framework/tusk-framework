@@ -8,6 +8,8 @@ use Tusk\Config\Repository;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Core\ApplicationInterface;
 use Tusk\Core\Container\Container;
+use Tusk\Runtime\Jobs\JobHandlerRegistry;
+use Tusk\Runtime\Jobs\JobHandlerScanner;
 use Tusk\Runtime\RuntimeConfiguration;
 use Tusk\Runtime\RuntimeModuleFactory;
 use Tusk\Web\HttpKernel;
@@ -21,6 +23,9 @@ class ApplicationBuilder
 
     /** @var list<string> */
     private array $providers = [];
+
+    /** @var list<string> */
+    private array $jobs = [];
 
     public function __construct(private string $basePath) {}
 
@@ -52,15 +57,30 @@ class ApplicationBuilder
         return $this;
     }
 
+    public function withJobs(string ...$directories): self
+    {
+        array_push($this->jobs, ...$directories);
+
+        return $this;
+    }
+
     public function create(): Application
     {
         $container = new Container;
         $router = new Router;
         $values = $this->loadConfig();
         $config = new Repository($values);
-        $runtimeModules = RuntimeModuleFactory::fromConfiguration(RuntimeConfiguration::fromArray($values));
+        $runtimeConfiguration = RuntimeConfiguration::fromArray($values);
+        $runtimeModules = RuntimeModuleFactory::fromConfiguration($runtimeConfiguration);
         $kernel = new HttpKernel($container, $router);
-        $application = new Application($this->basePath, $container, $kernel, runtimeModules: $runtimeModules);
+        $application = new Application(
+            $this->basePath,
+            $container,
+            $kernel,
+            runtimeModules: $runtimeModules,
+            executionMode: $runtimeConfiguration->executionMode(),
+            jobRetry: $runtimeConfiguration->jobRetry(),
+        );
 
         foreach ([
             Container::class => $container,
@@ -68,11 +88,25 @@ class ApplicationBuilder
             Router::class => $router,
             RouterInterface::class => $router,
             Repository::class => $config,
+            RuntimeConfiguration::class => $runtimeConfiguration,
             HttpKernel::class => $kernel,
             Application::class => $application,
             ApplicationInterface::class => $application,
         ] as $id => $instance) {
             $container->instance($id, $instance);
+        }
+
+        $root = realpath($this->basePath);
+        $paths = array_map(
+            fn (string $directory): string => preg_match('~^(?:[a-zA-Z]:[/\\\\]|/)~', $directory)
+                ? $directory
+                : ($root ?: $this->basePath).DIRECTORY_SEPARATOR.$directory,
+            $this->jobs,
+        );
+        $registry = (new JobHandlerScanner)->scan($paths);
+        $container->instance(JobHandlerRegistry::class, $registry);
+        foreach ($registry->handlers() as $handlerClass) {
+            $container->register($handlerClass);
         }
 
         foreach ($this->providers as $path) {

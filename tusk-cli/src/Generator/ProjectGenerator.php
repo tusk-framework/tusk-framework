@@ -15,7 +15,7 @@ class ProjectGenerator
             throw new \RuntimeException("Directory '$name' already exists!");
         }
 
-        foreach (['app/Controller', 'bootstrap', 'config', 'routes', 'public'] as $directory) {
+        foreach (['app/Controller', 'app/Jobs', 'bootstrap', 'config', 'routes', 'public'] as $directory) {
             mkdir($baseDir.'/'.$directory, 0755, true);
         }
 
@@ -24,7 +24,10 @@ class ProjectGenerator
             'public-index.stub' => 'public/index.php',
             'routes-web.stub' => 'routes/web.php',
             'config-app.stub' => 'config/app.php',
+            'config-runtime.stub' => 'config/runtime.php',
             'gitignore.stub' => '.gitignore',
+            'welcome-job.stub' => 'app/Jobs/WelcomeJob.php',
+            'dispatch-job.stub' => 'app/Jobs/dispatch-example.php',
         ] as $stub => $destination) {
             file_put_contents($baseDir.'/'.$destination, file_get_contents(__DIR__.'/../../stubs/'.$stub));
         }
@@ -34,10 +37,12 @@ class ProjectGenerator
 <?php
 
 use App\Controller\HomeController;
+use App\Jobs\WelcomeJobProducer;
 use Tusk\Core\Container\Container;
 
 return static function (Container $container): void {
     $container->register(HomeController::class);
+    $container->register(WelcomeJobProducer::class);
 };
 PHP);
         file_put_contents($baseDir.'/composer.json', $this->getComposerJson($name));
