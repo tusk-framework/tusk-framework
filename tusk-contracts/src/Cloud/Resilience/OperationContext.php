@@ -17,13 +17,19 @@ final readonly class OperationContext
         private ?DeadlineInterface $deadline,
         private bool $retryAllowed,
         private array $metadata,
+        private ?CancellationTokenInterface $cancellationToken,
     ) {}
 
     /**
      * @param  array<string, mixed>  $metadata
      */
-    public static function create(string $operation, ?DeadlineInterface $deadline = null, bool $retryAllowed = false, array $metadata = []): self
-    {
+    public static function create(
+        string $operation,
+        ?DeadlineInterface $deadline = null,
+        bool $retryAllowed = false,
+        array $metadata = [],
+        ?CancellationTokenInterface $cancellationToken = null,
+    ): self {
         $operation = trim($operation);
 
         if ($operation === '') {
@@ -32,7 +38,7 @@ final readonly class OperationContext
 
         $activeReferences = [];
 
-        return new self($operation, $deadline, $retryAllowed, self::snapshotArray($metadata, $activeReferences));
+        return new self($operation, $deadline, $retryAllowed, self::snapshotArray($metadata, $activeReferences), $cancellationToken);
     }
 
     public function operation(): string
@@ -48,6 +54,16 @@ final readonly class OperationContext
     public function retryAllowed(): bool
     {
         return $this->retryAllowed;
+    }
+
+    public function cancellationToken(): ?CancellationTokenInterface
+    {
+        return $this->cancellationToken;
+    }
+
+    public function isCancellationRequested(): bool
+    {
+        return $this->cancellationToken?->isCancellationRequested() ?? false;
     }
 
     /**

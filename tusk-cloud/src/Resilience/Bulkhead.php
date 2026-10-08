@@ -7,6 +7,7 @@ namespace Tusk\Cloud\Resilience;
 use InvalidArgumentException;
 use Tusk\Cloud\Resilience\Exception\BulkheadRejectedException;
 use Tusk\Cloud\Resilience\Exception\BulkheadTimeoutException;
+use Tusk\Cloud\Resilience\Exception\OperationCancelledException;
 use Tusk\Contracts\Cloud\Resilience\ClockInterface;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
 
@@ -26,6 +27,7 @@ final class Bulkhead
 
     public function run(callable $operation, OperationContext $context, BulkheadPolicy $policy): mixed
     {
+        $this->assertNotCancelled($context);
         if ($context->deadline()?->isExpired($this->clock->nowMilliseconds()) === true) {
             throw new BulkheadTimeoutException('Operation deadline expired before bulkhead admission.');
         }
@@ -58,6 +60,7 @@ final class Bulkhead
 
             try {
                 while (true) {
+                    $this->assertNotCancelled($context);
                     $now = $this->clock->nowMilliseconds();
                     $remaining = $context->deadline()->remainingMilliseconds($now);
                     if ($remaining === 0) {
@@ -102,5 +105,12 @@ final class Bulkhead
         }
 
         return false;
+    }
+
+    private function assertNotCancelled(OperationContext $context): void
+    {
+        if ($context->isCancellationRequested()) {
+            throw new OperationCancelledException($context->operation());
+        }
     }
 }

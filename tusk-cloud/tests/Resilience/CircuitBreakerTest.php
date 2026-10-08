@@ -15,6 +15,8 @@ use Tusk\Cloud\Resilience\Exception\CircuitOpenException;
 use Tusk\Cloud\Resilience\InMemoryStateStore;
 use Tusk\Cloud\Resilience\State;
 use Tusk\Cloud\Resilience\Testing\FakeClock;
+use Tusk\Contracts\Cloud\Resilience\FailureClassifierInterface;
+use Tusk\Contracts\Cloud\Resilience\FailureDecision;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
 use Tusk\Contracts\Cloud\Resilience\StateStoreInterface;
 
@@ -272,6 +274,132 @@ final class CircuitBreakerTest extends TestCase
     public function test_outcome_store_set_failure_preserves_original_throwable(): void
     {
         $this->assertOriginalFailureSurvivesStoreFailure('set');
+    }
+
+    public function test_store_read_failure_after_success_does_not_replace_operation_result(): void
+    {
+        $store = new class implements StateStoreInterface
+        {
+            private int $reads = 0;
+
+            public function get(string $key): ?array
+            {
+                if (++$this->reads === 2) {
+                    throw new RuntimeException('transient store read failure');
+                }
+
+                return null;
+            }
+
+            public function set(string $key, array $data, ?float $ttl = null): void {}
+        };
+        $breaker = new CircuitBreaker($store, new FakeClock, 'payments');
+
+        self::assertSame('charged', $breaker->execute(
+            static fn (): string => 'charged',
+            OperationContext::create('charge'),
+            CircuitBreakerPolicy::create(),
+        ));
+    }
+
+    public function test_store_write_failure_after_success_does_not_replace_operation_result(): void
+    {
+        $store = new class implements StateStoreInterface
+        {
+            private int $writes = 0;
+
+            public function get(string $key): ?array
+            {
+                return null;
+            }
+
+            public function set(string $key, array $data, ?float $ttl = null): void
+            {
+                if (++$this->writes === 1) {
+                    throw new RuntimeException('transient store write failure');
+                }
+            }
+        };
+        $breaker = new CircuitBreaker($store, new FakeClock, 'payments');
+
+        self::assertSame('charged', $breaker->execute(
+            static fn (): string => 'charged',
+            OperationContext::create('charge'),
+            CircuitBreakerPolicy::create(),
+        ));
+    }
+
+    public function test_half_open_probe_budget_recovers_after_close_and_reopen_writes_fail(): void
+    {
+        $store = new class implements StateStoreInterface
+        {
+            private InMemoryStateStore $inner;
+
+            private int $writes = 0;
+
+            public function __construct()
+            {
+                $this->inner = new InMemoryStateStore;
+            }
+
+            public function get(string $key): ?array
+            {
+                return $this->inner->get($key);
+            }
+
+            public function set(string $key, array $data, ?float $ttl = null): void
+            {
+                if (in_array(++$this->writes, [3, 4], true)) {
+                    throw new RuntimeException('transient close write failure');
+                }
+
+                $this->inner->set($key, $data, $ttl);
+            }
+        };
+        $clock = new FakeClock(100);
+        $breaker = new CircuitBreaker($store, $clock, 'payments');
+        $context = OperationContext::create('charge');
+        $policy = CircuitBreakerPolicy::create(failureThreshold: 1, openDurationMilliseconds: 10);
+        $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('provider down'));
+        $clock->sleepMilliseconds(10);
+
+        self::assertSame('probe success', $breaker->execute(static fn (): string => 'probe success', $context, $policy));
+        self::assertSame(State::HALF_OPEN, $breaker->state());
+        self::assertSame(1, $breaker->snapshot()['halfOpenProbeCount']);
+
+        self::assertSame('recovered', $breaker->execute(static fn (): string => 'recovered', $context, $policy));
+        self::assertSame(State::CLOSED, $breaker->state());
+    }
+
+    public function test_non_counting_half_open_failure_releases_probe_capacity(): void
+    {
+        $clock = new FakeClock;
+        $breaker = new CircuitBreaker(new InMemoryStateStore, $clock, 'payments');
+        $policy = CircuitBreakerPolicy::create(failureThreshold: 1, openDurationMilliseconds: 10);
+        $context = OperationContext::create('charge');
+        $this->catchSameFailure($breaker, $context, $policy, new RuntimeException('provider failed'));
+        $clock->sleepMilliseconds(10);
+        $classifier = new class implements FailureClassifierInterface
+        {
+            public function classify(\Throwable $failure, OperationContext $context): FailureDecision
+            {
+                return FailureDecision::terminal(circuitFailure: false);
+            }
+        };
+
+        try {
+            $breaker->execute(static function (): never {
+                throw new RuntimeException('caller cancelled');
+            }, $context, $policy, $classifier);
+            self::fail('Probe failure was swallowed.');
+        } catch (RuntimeException $failure) {
+            self::assertSame('caller cancelled', $failure->getMessage());
+        }
+
+        self::assertSame(State::HALF_OPEN, $breaker->state());
+        self::assertSame(0, $breaker->snapshot()['halfOpenProbeCount']);
+        self::assertSame('recovered', $breaker->execute(static fn (): string => 'recovered', $context, $policy));
+        self::assertSame(State::CLOSED, $breaker->state());
     }
 
     public function test_legacy_or_malformed_generation_is_treated_as_closed(): void

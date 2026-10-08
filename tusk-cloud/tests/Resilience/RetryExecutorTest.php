@@ -10,16 +10,55 @@ use Throwable;
 use Tusk\Cloud\Resilience\Backoff\FixedBackoff;
 use Tusk\Cloud\Resilience\BackoffStrategyInterface;
 use Tusk\Cloud\Resilience\Deadline;
+use Tusk\Cloud\Resilience\Exception\OperationCancelledException;
 use Tusk\Cloud\Resilience\Exception\ResilienceDeadlineExceededException;
 use Tusk\Cloud\Resilience\RetryExecutor;
 use Tusk\Cloud\Resilience\RetryPolicy;
 use Tusk\Cloud\Resilience\Testing\FakeClock;
+use Tusk\Contracts\Cloud\Resilience\CancellationTokenInterface;
+use Tusk\Contracts\Cloud\Resilience\ClockInterface;
 use Tusk\Contracts\Cloud\Resilience\FailureClassifierInterface;
 use Tusk\Contracts\Cloud\Resilience\FailureDecision;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
 
 final class RetryExecutorTest extends TestCase
 {
+    public function test_cancellation_stops_retries_before_the_next_attempt(): void
+    {
+        $state = (object) ['cancelled' => false];
+        $token = new class($state) implements CancellationTokenInterface
+        {
+            public function __construct(private object $state) {}
+
+            public function isCancellationRequested(): bool
+            {
+                return $this->state->cancelled;
+            }
+        };
+        $classifier = new class($state) implements FailureClassifierInterface
+        {
+            public function __construct(private object $state) {}
+
+            public function classify(Throwable $failure, OperationContext $context): FailureDecision
+            {
+                $this->state->cancelled = true;
+
+                return FailureDecision::retryable();
+            }
+        };
+        $attempts = 0;
+
+        try {
+            (new RetryExecutor(new FakeClock))->execute(static function () use (&$attempts): never {
+                $attempts++;
+                throw new RuntimeException('temporary');
+            }, OperationContext::create('read', retryAllowed: true, cancellationToken: $token), RetryPolicy::create(maxAttempts: 3, classifier: $classifier));
+            self::fail('Cancellation did not stop the retry loop.');
+        } catch (OperationCancelledException) {
+            self::assertSame(1, $attempts);
+        }
+    }
+
     public function test_first_attempt_returns_result_without_sleeping(): void
     {
         $clock = new FakeClock(100);
@@ -180,6 +219,46 @@ final class RetryExecutorTest extends TestCase
 
         self::assertSame(1, $attempts);
         self::assertSame(100, $clock->nowMilliseconds());
+    }
+
+    public function test_backoff_stops_if_the_clock_oversleeps_past_the_deadline(): void
+    {
+        $clock = new class implements ClockInterface
+        {
+            private FakeClock $inner;
+
+            public function __construct()
+            {
+                $this->inner = new FakeClock;
+            }
+
+            public function nowMilliseconds(): int
+            {
+                return $this->inner->nowMilliseconds();
+            }
+
+            public function sleepMilliseconds(int $milliseconds): void
+            {
+                $this->inner->sleepMilliseconds($milliseconds + 1);
+            }
+        };
+        $failure = new RuntimeException('temporary');
+        $attempts = 0;
+
+        try {
+            (new RetryExecutor($clock))->execute(static function () use (&$attempts, $failure): never {
+                $attempts++;
+                throw $failure;
+            }, OperationContext::create('read', new Deadline(25), retryAllowed: true), RetryPolicy::create(
+                maxAttempts: 2,
+                backoffStrategy: FixedBackoff::create(25),
+                classifier: $this->retryableClassifier(),
+            ));
+            self::fail('Retry continued after the operation deadline.');
+        } catch (ResilienceDeadlineExceededException $caught) {
+            self::assertSame($failure, $caught->getPrevious());
+            self::assertSame(1, $attempts);
+        }
     }
 
     public function test_deadline_rechecked_before_next_attempt_with_prior_failure(): void

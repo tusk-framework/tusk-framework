@@ -13,7 +13,9 @@ use Tusk\Cloud\Resilience\BulkheadPolicy;
 use Tusk\Cloud\Resilience\Deadline;
 use Tusk\Cloud\Resilience\Exception\BulkheadRejectedException;
 use Tusk\Cloud\Resilience\Exception\BulkheadTimeoutException;
+use Tusk\Cloud\Resilience\Exception\OperationCancelledException;
 use Tusk\Cloud\Resilience\Testing\FakeClock;
+use Tusk\Contracts\Cloud\Resilience\CancellationTokenInterface;
 use Tusk\Contracts\Cloud\Resilience\ClockInterface;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
 
@@ -87,6 +89,44 @@ final class BulkheadTest extends TestCase
             $queued->resume();
             self::fail('Expired queued operation ran.');
         } catch (BulkheadTimeoutException) {
+        }
+
+        $second = new Fiber(fn (): mixed => $bulkhead->run(static fn (): string => 'second', OperationContext::create('second', new Deadline(10)), $policy));
+        $second->start();
+        self::assertTrue($second->isSuspended());
+        $holder->resume();
+        $second->resume();
+        self::assertSame('second', $second->getReturn());
+    }
+
+    public function test_queued_caller_can_be_cancelled_before_its_deadline(): void
+    {
+        $cancelState = (object) ['cancelled' => false];
+        $token = new class($cancelState) implements CancellationTokenInterface
+        {
+            public function __construct(private object $state) {}
+
+            public function isCancellationRequested(): bool
+            {
+                return $this->state->cancelled;
+            }
+        };
+        $clock = $this->suspendingClock();
+        $bulkhead = new Bulkhead($clock);
+        $policy = BulkheadPolicy::create(maxConcurrent: 1, maxQueued: 1);
+        $holder = new Fiber(fn (): mixed => $bulkhead->run(static function (): void {
+            Fiber::suspend();
+        }, OperationContext::create('holder'), $policy));
+        $holder->start();
+        $queued = new Fiber(fn (): mixed => $bulkhead->run(static fn (): string => 'cancelled', OperationContext::create('queued', new Deadline(10), cancellationToken: $token), $policy));
+        $queued->start();
+        $cancelState->cancelled = true;
+
+        try {
+            $queued->resume();
+            self::fail('Cancelled waiter remained queued.');
+        } catch (OperationCancelledException) {
+            self::assertTrue($queued->isTerminated());
         }
 
         $second = new Fiber(fn (): mixed => $bulkhead->run(static fn (): string => 'second', OperationContext::create('second', new Deadline(10)), $policy));

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Tusk\Cloud\Resilience;
 
 use InvalidArgumentException;
+use Tusk\Cloud\Resilience\Exception\OperationCancelledException;
 use Tusk\Cloud\Resilience\Exception\RateLimitRejectedException;
+use Tusk\Cloud\Resilience\Exception\ResilienceDeadlineExceededException;
 use Tusk\Contracts\Cloud\Resilience\ClockInterface;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
 
@@ -22,6 +24,7 @@ final class RateLimiter
 
     public function acquire(OperationContext $context, RateLimitPolicy $policy): void
     {
+        $this->assertAdmissible($context);
         $key = $this->policyKey($policy);
         if ($this->configuredPolicyKey !== null && $this->configuredPolicyKey !== $key) {
             throw new InvalidArgumentException('A rate limiter instance cannot be used with multiple policies.');
@@ -35,6 +38,7 @@ final class RateLimiter
         }
         $this->refill($start, $policy);
 
+        $this->assertAdmissible($context);
         if ($this->tokens >= 1.0) {
             $this->tokens--;
 
@@ -44,6 +48,7 @@ final class RateLimiter
         $deadline = $context->deadline();
         $waited = 0;
         while (true) {
+            $this->assertAdmissible($context);
             $now = $this->clock->nowMilliseconds();
             $this->refill($now, $policy);
 
@@ -70,13 +75,40 @@ final class RateLimiter
                 throw new RateLimitRejectedException('Rate limit wait budget expired.');
             }
 
-            $this->clock->sleepMilliseconds($sleep);
+            $this->sleepWithCancellation($sleep, $context);
             $afterSleep = $this->clock->nowMilliseconds();
             if ($afterSleep <= $now) {
                 throw new RateLimitRejectedException('Clock did not advance during rate limit wait.');
             }
 
-            $waited += min($afterSleep - $now, $policyRemaining);
+            $elapsed = $afterSleep - $now;
+            $waited = $elapsed > PHP_INT_MAX - $waited ? PHP_INT_MAX : $waited + $elapsed;
+            if ($waited > $policy->maxWaitMilliseconds()) {
+                throw new RateLimitRejectedException('Rate limit wait budget expired.');
+            }
+        }
+    }
+
+    private function assertAdmissible(OperationContext $context): void
+    {
+        if ($context->isCancellationRequested()) {
+            throw new OperationCancelledException($context->operation());
+        }
+
+        $deadline = $context->deadline();
+        if ($deadline !== null && $deadline->isExpired($this->clock->nowMilliseconds())) {
+            throw new ResilienceDeadlineExceededException($context->operation());
+        }
+    }
+
+    private function sleepWithCancellation(int $milliseconds, OperationContext $context): void
+    {
+        $remaining = $milliseconds;
+        while ($remaining > 0) {
+            $this->assertAdmissible($context);
+            $slice = min(10, $remaining);
+            $this->clock->sleepMilliseconds($slice);
+            $remaining -= $slice;
         }
     }
 

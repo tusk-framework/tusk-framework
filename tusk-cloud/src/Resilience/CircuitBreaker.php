@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use Throwable;
 use Tusk\Cloud\Resilience\Exception\CircuitOpenException;
 use Tusk\Contracts\Cloud\Resilience\ClockInterface;
+use Tusk\Contracts\Cloud\Resilience\FailureClassifierInterface;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
 use Tusk\Contracts\Cloud\Resilience\StateStoreInterface;
 
@@ -18,6 +19,8 @@ final class CircuitBreaker implements CircuitBreakerInterface
     private readonly string $generationNamespace;
 
     private int $generationFloor = 0;
+
+    private int $activeProbeCount = 0;
 
     public function __construct(
         private readonly StateStoreInterface $store,
@@ -33,8 +36,12 @@ final class CircuitBreaker implements CircuitBreakerInterface
         $this->generationNamespace = bin2hex(random_bytes(16));
     }
 
-    public function execute(callable $operation, OperationContext $context, CircuitBreakerPolicy $policy): mixed
-    {
+    public function execute(
+        callable $operation,
+        OperationContext $context,
+        CircuitBreakerPolicy $policy,
+        ?FailureClassifierInterface $classifier = null,
+    ): mixed {
         $snapshot = $this->snapshot();
         $probe = false;
         $admissionGeneration = $snapshot['halfOpenGeneration'];
@@ -56,7 +63,16 @@ final class CircuitBreaker implements CircuitBreakerInterface
 
         if ($snapshot['state'] === State::HALF_OPEN->value) {
             if ($snapshot['halfOpenProbeCount'] >= $policy->halfOpenProbeLimit()) {
-                throw new CircuitOpenException;
+                if ($this->activeProbeCount > 0) {
+                    throw new CircuitOpenException;
+                }
+
+                // A prior process-local probe may have completed while its
+                // state-store writes failed. Rotate the generation only when
+                // this breaker has no live probe, making abandoned tickets
+                // recoverable without admitting beyond the configured limit.
+                $snapshot['halfOpenProbeCount'] = 0;
+                $snapshot['halfOpenGeneration'] = $this->nextGeneration();
             }
 
             // Reserve before calling user code. The in-memory store provides
@@ -64,20 +80,31 @@ final class CircuitBreaker implements CircuitBreakerInterface
             $snapshot['halfOpenProbeCount']++;
             $this->saveSnapshot($snapshot);
             $probe = true;
+            $this->activeProbeCount++;
             $admissionGeneration = $snapshot['halfOpenGeneration'];
         }
 
         try {
             $result = $operation($context);
         } catch (Throwable $failure) {
+            $mayReopenProbe = false;
             try {
                 $current = $this->snapshot();
-                if ($probe && $current['halfOpenGeneration'] === $admissionGeneration
+                $mayReopenProbe = $probe
+                    && $current['halfOpenGeneration'] === $admissionGeneration
+                    && in_array($current['state'], [State::HALF_OPEN->value, State::CLOSED->value], true);
+                $decision = ($classifier ?? new DefaultFailureClassifier)->classify($failure, $context);
+                if (! $decision->countsAsCircuitFailure() && $probe
+                    && $current['state'] === State::HALF_OPEN->value
+                    && $current['halfOpenGeneration'] === $admissionGeneration) {
+                    $current['halfOpenProbeCount'] = max(0, $current['halfOpenProbeCount'] - 1);
+                    $this->saveSnapshot($current);
+                } elseif ($decision->countsAsCircuitFailure() && $probe && $current['halfOpenGeneration'] === $admissionGeneration
                     && in_array($current['state'], [State::HALF_OPEN->value, State::CLOSED->value], true)) {
                     // A failed in-flight probe wins over an earlier successful
                     // probe from the same half-open admission round.
                     $this->saveSnapshot($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration));
-                } elseif (! $probe && $current['state'] === State::CLOSED->value) {
+                } elseif ($decision->countsAsCircuitFailure() && ! $probe && $current['state'] === State::CLOSED->value) {
                     $current['failureCount']++;
                     if ($current['failureCount'] >= $policy->failureThreshold()) {
                         $current = $this->openSnapshot($policy, $this->clock->nowMilliseconds(), $current['halfOpenGeneration']);
@@ -85,20 +112,51 @@ final class CircuitBreaker implements CircuitBreakerInterface
                     $this->saveSnapshot($current);
                 }
             } catch (Throwable) {
-                // Accounting infrastructure must never replace the operation failure.
+                if ($mayReopenProbe) {
+                    try {
+                        $this->saveSnapshot($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration));
+                    } catch (Throwable) {
+                        // Accounting infrastructure must never replace the operation failure.
+                    }
+                }
+            }
+
+            if ($probe) {
+                $this->activeProbeCount--;
             }
 
             throw $failure;
         }
 
-        $current = $this->snapshot();
-        if ($probe && $current['state'] === State::HALF_OPEN->value && $current['halfOpenGeneration'] === $admissionGeneration) {
-            $this->saveSnapshot($this->closedSnapshot($admissionGeneration));
-        } elseif (! $probe && $current['state'] === State::CLOSED->value) {
-            // This policy counts consecutive failed logical operations.
-            // Rolling-window accounting is deferred to a future policy/store.
-            $current['failureCount'] = 0;
-            $this->saveSnapshot($current);
+        if ($probe) {
+            $this->activeProbeCount--;
+        }
+
+        $mayReopenProbe = false;
+        try {
+            $current = $this->snapshot();
+            $mayReopenProbe = $probe
+                && $current['state'] === State::HALF_OPEN->value
+                && $current['halfOpenGeneration'] === $admissionGeneration;
+            if ($probe && $current['state'] === State::HALF_OPEN->value && $current['halfOpenGeneration'] === $admissionGeneration) {
+                $this->saveSnapshot($this->closedSnapshot($admissionGeneration));
+            } elseif (! $probe && $current['state'] === State::CLOSED->value) {
+                // This policy counts consecutive failed logical operations.
+                // Rolling-window accounting is deferred to a future policy/store.
+                $current['failureCount'] = 0;
+                $this->saveSnapshot($current);
+            }
+        } catch (Throwable) {
+            if ($mayReopenProbe) {
+                // If a successful probe cannot close the circuit, best-effort
+                // reopen it so a transient store failure cannot strand a full
+                // half-open probe budget indefinitely.
+                try {
+                    $this->saveSnapshot($this->openSnapshot($policy, $this->clock->nowMilliseconds(), $admissionGeneration));
+                } catch (Throwable) {
+                    // Preserve the already successful operation result.
+                }
+            }
         }
 
         return $result;

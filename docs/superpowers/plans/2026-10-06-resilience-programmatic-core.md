@@ -57,12 +57,12 @@
 
 **TDD steps:**
 
-- [ ] Write tests first for monotonic fake time, deadline expiry/remaining time, immutable operation context, and default terminal classification.
-- [ ] Run `vendor/bin/phpunit tusk-cloud/tests/Resilience/ContractAndClockTest.php`; confirm the new tests fail because the contracts and implementations do not exist.
-- [ ] Implement the contracts, `SystemClock`, `FakeClock`, and value objects with strict validation for negative time and invalid operation names.
-- [ ] Run the focused test again and then `vendor/bin/phpunit tusk-cloud/tests/Resilience/ContractAndClockTest.php`; confirm green.
-- [ ] Run `vendor/bin/pint --test` on touched PHP files.
-- [ ] Commit as `feat(resilience): add deterministic resilience contracts`.
+- [x] Write tests first for monotonic fake time, deadline expiry/remaining time, immutable operation context, and default terminal classification.
+- [x] Run `vendor/bin/phpunit tusk-cloud/tests/Resilience/ContractAndClockTest.php`; confirm the new tests fail because the contracts and implementations do not exist.
+- [x] Implement the contracts, `SystemClock`, `FakeClock`, and value objects with strict validation for negative time and invalid operation names.
+- [x] Run the focused test again and then `vendor/bin/phpunit tusk-cloud/tests/Resilience/ContractAndClockTest.php`; confirm green.
+- [x] Run `vendor/bin/pint --test` on touched PHP files.
+- [x] Commit as `feat(resilience): add deterministic resilience contracts`.
 
 ## Task 2: Introduce validated policies and backoff strategies
 
@@ -87,12 +87,12 @@
 
 **TDD steps:**
 
-- [ ] Write failing tests for all validation boundaries, attempt-count semantics, fixed/exponential delay caps, deterministic jitter, zero queue defaults, and rate token refill.
-- [ ] Run the two focused test files and capture the expected red result.
-- [ ] Implement the immutable policy objects and backoff strategies; keep randomness injectable and keep all sleeping outside the strategies.
-- [ ] Run the focused tests until green and verify there are no implicit retries in the default policy.
-- [ ] Run Pint and PHPStan against `tusk-cloud/src/Resilience`.
-- [ ] Commit as `feat(resilience): add validated resilience policies`.
+- [x] Write failing tests for all validation boundaries, attempt-count semantics, fixed/exponential delay caps, deterministic jitter, zero queue defaults, and rate token refill.
+- [x] Run the two focused test files and capture the expected red result.
+- [x] Implement the immutable policy objects and backoff strategies; keep randomness injectable and keep all sleeping outside the strategies.
+- [x] Run the focused tests until green and verify there are no implicit retries in the default policy.
+- [x] Run Pint and PHPStan against `tusk-cloud/src/Resilience`.
+- [x] Commit as `feat(resilience): add validated resilience policies`.
 
 ## Task 3: Implement the deadline-aware retry executor
 
@@ -117,11 +117,11 @@
 
 **TDD steps:**
 
-- [ ] Write failing tests for success on first attempt, retryable failure then success, terminal failure, max-attempt exhaustion, unsafe-operation refusal, deadline during backoff, and original exception preservation.
-- [ ] Run `vendor/bin/phpunit tusk-cloud/tests/Resilience/RetryExecutorTest.php`; confirm red.
-- [ ] Implement the executor and the deliberate compatibility/removal decision for `Retry.php`.
-- [ ] Run the focused tests, then the complete resilience test directory; confirm green.
-- [ ] Run Pint and PHPStan; commit as `feat(resilience): add deadline-aware retry execution`.
+- [x] Write failing tests for success on first attempt, retryable failure then success, terminal failure, max-attempt exhaustion, unsafe-operation refusal, deadline during backoff, and original exception preservation.
+- [x] Run `vendor/bin/phpunit tusk-cloud/tests/Resilience/RetryExecutorTest.php`; confirm red.
+- [x] Implement the executor and the deliberate compatibility/removal decision for `Retry.php`.
+- [x] Run the focused tests, then the complete resilience test directory; confirm green.
+- [x] Run Pint and PHPStan; commit as `feat(resilience): add deadline-aware retry execution`.
 
 ## Task 4: Rebuild the circuit breaker with bounded half-open probes
 
@@ -150,11 +150,11 @@
 
 **TDD steps:**
 
-- [ ] Write failing state-machine tests for closed success, threshold opening, fail-fast open, clock-driven half-open transition, one successful probe, failed probe reopening, and concurrent probe rejection.
-- [ ] Run the focused circuit test and confirm red.
-- [ ] Implement the state machine and atomic-enough in-memory admission behavior for the current process; document that distributed atomicity belongs to a future store adapter.
-- [ ] Run focused tests plus retry/circuit interaction tests; confirm green.
-- [ ] Run Pint and PHPStan; commit as `feat(resilience): bound circuit breaker half-open probes`.
+- [x] Write failing state-machine tests for closed success, threshold opening, fail-fast open, clock-driven half-open transition, one successful probe, failed probe reopening, and concurrent probe rejection.
+- [x] Run the focused circuit test and confirm red.
+- [x] Implement the state machine and atomic-enough in-memory admission behavior for the current process; document that distributed atomicity belongs to a future store adapter.
+- [x] Run focused tests plus retry/circuit interaction tests; confirm green.
+- [x] Run Pint and PHPStan; commit as `feat(resilience): bound circuit breaker half-open probes`.
 
 ## Task 5: Add bounded bulkhead and token-bucket rate limiting
 
@@ -180,10 +180,10 @@
 
 **TDD steps:**
 
-- [ ] Write failing tests for immediate bulkhead rejection, bounded queue admission, deadline expiration while queued, release on throwable, token consumption, refill, and bounded rate-limit wait.
-- [ ] Run the focused tests and confirm red.
-- [ ] Implement the bounded primitives with explicit exceptions and `finally` cleanup.
-- [ ] Run focused tests, the full resilience suite, Pint, and PHPStan; commit as `feat(resilience): add bounded bulkheads and rate limiting`.
+- [x] Write failing tests for immediate bulkhead rejection, bounded queue admission, deadline expiration while queued, release on throwable, token consumption, refill, and bounded rate-limit wait.
+- [x] Run the focused tests and confirm red.
+- [x] Implement the bounded primitives with explicit exceptions and `finally` cleanup.
+- [x] Run focused tests, the full resilience suite, Pint, and PHPStan; commit as `feat(resilience): add bounded bulkheads and rate limiting`.
 
 ## Task 6: Compose the programmatic resilience pipeline
 
@@ -211,12 +211,12 @@
 
 **TDD steps:**
 
-- [ ] Write failing tests for fluent configuration, operation-context propagation, composition order, final-outcome circuit accounting, rate limiting per attempt, bulkhead cleanup, explicit fallback, and original exception propagation.
-- [ ] Run `vendor/bin/phpunit tusk-cloud/tests/Resilience/ResiliencePipelineTest.php`; confirm red.
-- [ ] Implement the builder/factory and pipeline using the previously tested primitives; do not duplicate policy logic in the pipeline.
-- [ ] Run the complete resilience suite and confirm green.
-- [ ] Update the README with a minimal idiomatic example and a warning that attributes/HTTP integration are future phases.
-- [ ] Run Pint and PHPStan; commit as `feat(resilience): add programmatic resilience pipelines`.
+- [x] Write failing tests for fluent configuration, operation-context propagation, composition order, final-outcome circuit accounting, rate limiting per attempt, bulkhead cleanup, explicit fallback, and original exception propagation.
+- [x] Run `vendor/bin/phpunit tusk-cloud/tests/Resilience/ResiliencePipelineTest.php`; confirm red.
+- [x] Implement the builder/factory and pipeline using the previously tested primitives; do not duplicate policy logic in the pipeline.
+- [x] Run the complete resilience suite and confirm green.
+- [x] Update the README with a minimal idiomatic example and a warning that attributes/HTTP integration are future phases.
+- [x] Run Pint and PHPStan; commit as `feat(resilience): add programmatic resilience pipelines`.
 
 ## Task 7: Integrate quality gates and verify the first delivery phase
 
@@ -229,14 +229,14 @@
 
 **Verification steps:**
 
-- [ ] Run `vendor/bin/phpunit tusk-cloud/tests/Resilience`.
-- [ ] Run the root `vendor/bin/phpunit` suite.
-- [ ] Run `vendor/bin/phpstan analyse tusk-cloud/src tusk-contracts/src --no-progress` using the repository's configured baseline/options.
-- [ ] Run `vendor/bin/pint --test` on all touched PHP files.
-- [ ] Run `git diff --check` and inspect the final diff for accidental generated files, static state, unbounded waits, or provider-specific imports.
-- [ ] Run the existing CI-equivalent commands before opening the pull request.
+- [x] Run `vendor/bin/phpunit tusk-cloud/tests/Resilience`.
+- [x] Run the root `vendor/bin/phpunit` suite (one local failure from the ignored `.worktrees/hardening` fixture is documented in the report).
+- [x] Run `vendor/bin/phpstan analyse tusk-cloud/src tusk-contracts/src --no-progress` using the repository's configured baseline/options.
+- [x] Run `vendor/bin/pint --test` on all touched PHP files.
+- [x] Run `git diff --check` and inspect the final diff for accidental generated files, static state, unbounded waits, or provider-specific imports.
+- [x] Run the existing CI-equivalent commands before opening the pull request.
 - [ ] Open the pull request with sections: Why, Architecture, API, Safety Semantics, Tests, Follow-up Phases, and Known Limitations.
-- [ ] Request a code review using `superpowers:requesting-code-review`; address findings before merging.
+- [x] Request a code review using `superpowers:requesting-code-review`; address findings before merging.
 - [ ] Update issue #10 with the phase evidence and create/link follow-up issues; do not close it until its full acceptance criteria, including HTTP integration and runtime observability, are complete.
 
 ## Follow-up plans intentionally excluded from this cycle

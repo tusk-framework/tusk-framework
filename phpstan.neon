@@ -10,5 +10,3 @@ parameters:
         - tusk-runtime/src
         - tusk-security/src
         - tusk-web/src
-    ignoreErrors:
-        - identifier: while.alwaysTrue

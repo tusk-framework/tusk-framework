@@ -73,7 +73,8 @@ Contracts contain behavior-neutral types only:
 - `Resilience\ClockInterface` for monotonic time and sleeping.
 - `Resilience\DeadlineInterface` for remaining budget and expiration.
 - `Resilience\OperationContext` carrying operation name, deadline,
-  idempotency, and cancellation metadata.
+  retry authorization, immutable metadata, and an optional cooperative
+  `CancellationTokenInterface`.
 - `Resilience\FailureClassifierInterface` for exception/status decisions.
 - `Resilience\StateStoreInterface` remains the existing persistence boundary;
   resilience-specific keys use a namespaced operation key.
@@ -164,6 +165,9 @@ constructible and testable.
 - `queueLimit` defaults to zero; when positive it is finite and rejects once
   full.
 - Waiting consumes the operation deadline and cancellation context.
+- Cancellation is cooperative: executors check the token at admission and
+  between bounded waits; an already-running user operation must observe the
+  same token if it needs in-flight cancellation.
 - Release occurs in `finally`, including exceptions and cancellation.
 
 ### Rate limiter
@@ -172,6 +176,7 @@ constructible and testable.
 - Capacity and refill rate must be positive and finite.
 - Acquisition consumes the operation deadline; no unbounded sleeping occurs.
 - Rejection is explicit and observable.
+- An expired operation deadline rejects admission even if a token is available.
 - Worker-local state is the default; shared state requires an injected store.
 
 ## HTTP integration
@@ -303,6 +308,18 @@ Required coverage:
 Each phase is independently testable and can be merged without requiring the
 next phase. The Engine remains unchanged unless a later, separately approved
 diagnostics contract is needed.
+
+### First programmatic core implementation notes
+
+- A constructed pipeline owns worker-local bulkhead and rate-limit state and
+  should be built once at application bootstrap and reused.
+- A circuit observes the final retry outcome through the configured failure
+  classifier. Cancellation, caller deadline expiry, and rate-limit rejection
+  do not count as circuit failures under the default classifier.
+- Circuit state reads required to admit an operation fail closed. Errors while
+  recording an outcome after user code has completed never replace the
+  operation's result or throwable; a failed half-open close attempts to reopen
+  the circuit so a transient store error does not strand the probe budget.
 
 ## Alternatives rejected
 

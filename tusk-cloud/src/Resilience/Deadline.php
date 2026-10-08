@@ -23,7 +23,7 @@ final readonly class Deadline implements DeadlineInterface
         return $nowMilliseconds >= $this->expiresAtMilliseconds;
     }
 
-    public function remainingMilliseconds(int $nowMilliseconds): ?int
+    public function remainingMilliseconds(int $nowMilliseconds): int
     {
         $this->validateNow($nowMilliseconds);
 

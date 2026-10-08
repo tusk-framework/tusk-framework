@@ -8,5 +8,5 @@ interface DeadlineInterface
 {
     public function isExpired(int $nowMilliseconds): bool;
 
-    public function remainingMilliseconds(int $nowMilliseconds): ?int;
+    public function remainingMilliseconds(int $nowMilliseconds): int;
 }

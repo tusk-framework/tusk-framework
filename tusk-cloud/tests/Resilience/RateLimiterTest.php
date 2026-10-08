@@ -7,10 +7,14 @@ namespace Tusk\Cloud\Tests\Resilience;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use Tusk\Cloud\Resilience\Deadline;
+use Tusk\Cloud\Resilience\Exception\OperationCancelledException;
 use Tusk\Cloud\Resilience\Exception\RateLimitRejectedException;
+use Tusk\Cloud\Resilience\Exception\ResilienceDeadlineExceededException;
 use Tusk\Cloud\Resilience\RateLimiter;
 use Tusk\Cloud\Resilience\RateLimitPolicy;
 use Tusk\Cloud\Resilience\Testing\FakeClock;
+use Tusk\Contracts\Cloud\Resilience\CancellationTokenInterface;
+use Tusk\Contracts\Cloud\Resilience\ClockInterface;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
 
 final class RateLimiterTest extends TestCase
@@ -94,8 +98,120 @@ final class RateLimiterTest extends TestCase
         $policy = RateLimitPolicy::create(capacity: 1, refillPerSecond: 1, maxWaitMilliseconds: 500);
         $limiter->acquire(OperationContext::create('read'), $policy);
         $context = OperationContext::create('read', new Deadline(125));
-        $this->assertRejected($limiter, $context, $policy);
-        self::assertSame(125, $clock->nowMilliseconds());
+        try {
+            $limiter->acquire($context, $policy);
+            self::fail('Expired operation deadline was reported as an ordinary rate rejection.');
+        } catch (ResilienceDeadlineExceededException) {
+            self::assertSame(125, $clock->nowMilliseconds());
+        }
+    }
+
+    public function test_expired_deadline_rejects_even_when_a_token_is_available(): void
+    {
+        $limiter = new RateLimiter(new FakeClock(10));
+        $context = OperationContext::create('read', new Deadline(10));
+
+        $this->expectException(ResilienceDeadlineExceededException::class);
+        $limiter->acquire($context, RateLimitPolicy::create());
+    }
+
+    public function test_cancelled_operation_does_not_consume_an_available_token(): void
+    {
+        $state = (object) ['cancelled' => true];
+        $token = new class($state) implements CancellationTokenInterface
+        {
+            public function __construct(private object $state) {}
+
+            public function isCancellationRequested(): bool
+            {
+                return $this->state->cancelled;
+            }
+        };
+        $limiter = new RateLimiter(new FakeClock);
+        $policy = RateLimitPolicy::create();
+
+        try {
+            $limiter->acquire(OperationContext::create('cancelled', cancellationToken: $token), $policy);
+            self::fail('Cancelled operation acquired a rate-limit token.');
+        } catch (OperationCancelledException) {
+            self::assertTrue($token->isCancellationRequested());
+        }
+
+        $limiter->acquire(OperationContext::create('next'), $policy);
+    }
+
+    public function test_waiting_rate_limit_acquisition_observes_cancellation(): void
+    {
+        $state = (object) ['cancelled' => false];
+        $clock = new class($state) implements ClockInterface
+        {
+            private FakeClock $inner;
+
+            public function __construct(private object $state)
+            {
+                $this->inner = new FakeClock;
+            }
+
+            public function nowMilliseconds(): int
+            {
+                return $this->inner->nowMilliseconds();
+            }
+
+            public function sleepMilliseconds(int $milliseconds): void
+            {
+                $this->inner->sleepMilliseconds($milliseconds);
+                $this->state->cancelled = true;
+            }
+        };
+        $token = new class($state) implements CancellationTokenInterface
+        {
+            public function __construct(private object $state) {}
+
+            public function isCancellationRequested(): bool
+            {
+                return $this->state->cancelled;
+            }
+        };
+        $limiter = new RateLimiter($clock);
+        $policy = RateLimitPolicy::create(capacity: 1, refillPerSecond: 1_000, maxWaitMilliseconds: 10);
+        $limiter->acquire(OperationContext::create('first'), $policy);
+
+        try {
+            $limiter->acquire(OperationContext::create('cancelled', cancellationToken: $token), $policy);
+            self::fail('Rate-limit wait ignored cancellation.');
+        } catch (OperationCancelledException) {
+            self::assertSame(1, $clock->nowMilliseconds());
+        }
+    }
+
+    public function test_actual_clock_oversleep_cannot_exceed_the_configured_wait_budget(): void
+    {
+        $clock = new class implements ClockInterface
+        {
+            private FakeClock $inner;
+
+            public function __construct()
+            {
+                $this->inner = new FakeClock;
+            }
+
+            public function nowMilliseconds(): int
+            {
+                return $this->inner->nowMilliseconds();
+            }
+
+            public function sleepMilliseconds(int $milliseconds): void
+            {
+                $this->inner->sleepMilliseconds($milliseconds + 10);
+            }
+        };
+        $limiter = new RateLimiter($clock);
+        $policy = RateLimitPolicy::create(capacity: 1, refillPerSecond: 1_000, maxWaitMilliseconds: 10);
+        $limiter->acquire(OperationContext::create('first'), $policy);
+
+        $this->assertRejected($limiter, OperationContext::create('late'), $policy);
+        self::assertSame(11, $clock->nowMilliseconds());
+        $limiter->acquire(OperationContext::create('next'), $policy);
     }
 
     public function test_limiter_instance_cannot_mix_bucket_policies(): void
