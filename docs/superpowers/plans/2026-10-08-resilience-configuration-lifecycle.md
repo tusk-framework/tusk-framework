@@ -24,7 +24,7 @@
 
 ## Review Focus
 
-- Profile overlays replacing an entire named policy instead of merging its individual fields must have a pinned, deterministic test.
+- Profile overlays replacing nested associative policy fields instead of recursively merging them must have a pinned, deterministic test; lists/scalars replace the base value.
 - Unknown policy names/keys and malformed nested values must produce actionable paths without leaking supplied values.
 - Invalid exception class names in classifier configuration must fail validation, not silently disable retry classification.
 - `tusk config:validate` must not boot workers, make network calls, or mutate generated/runtime state.
@@ -58,7 +58,7 @@
 - Test: `tusk-cloud/tests/Resilience/Configuration/ResilienceConfigurationTest.php`
 
 **Interfaces:**
-- Produces `ResiliencePolicyConfiguration::fromArray(string $name, array $values): self` and read-only accessors for the optional retry, circuit-breaker, bulkhead, and rate-limit maps.
+- Produces `ResiliencePolicyConfiguration::fromArray(string $name, array $values): self`, `name(): string`, and read-only accessors `retry(): ?array`, `circuitBreaker(): ?array`, `bulkhead(): ?array`, and `rateLimit(): ?array`.
 - Produces `ResilienceConfiguration::fromArray(array $policies): self`, `policy(string $name): ?ResiliencePolicyConfiguration`, and `all(): array<string, ResiliencePolicyConfiguration>`.
 - Names are non-empty trimmed strings; unknown keys and wrong scalar/list/object types throw `InvalidArgumentException` whose message identifies the full configuration path and never echoes user-provided values.
 
@@ -74,15 +74,15 @@
 **Files:**
 - Create: `tusk-cloud/src/Resilience/Configuration/ResilienceConfigurationLoader.php`
 - Create: `tusk-cloud/src/Resilience/Configuration/ResiliencePipelineResolver.php`
-- Create if required by tests: `tusk-cloud/src/Resilience/Configuration/ConfiguredFailureClassifier.php`
+- Create: `tusk-cloud/src/Resilience/Configuration/ConfiguredFailureClassifier.php`
 - Test: `tusk-cloud/tests/Resilience/Configuration/ResilienceConfigurationLoaderTest.php`
 - Test: `tusk-cloud/tests/Resilience/Configuration/ResiliencePipelineResolverTest.php`
 
 **Interfaces:**
 - Consumes Task 1's `ResilienceConfiguration` and `ResiliencePolicyConfiguration`.
 - Produces `ResilienceConfigurationLoader::load(array $values, ?string $profile = null): ResilienceConfiguration`.
-- Produces `ResiliencePipelineResolver::resolve(string $name, ResilienceConfiguration $configuration, ResiliencePipelineFactory $factory): ResiliencePipelineBuilder`; unknown names throw actionable `InvalidArgumentException`.
-- Loader input is the array returned from `config/resilience.php`, with `policies.<name>` plus optional `profiles.<profile>.policies.<name>`. A profile policy shallow-overrides matching policy fields and leaves unspecified base fields intact; profile-only policy names are included. Profile and policy keys are strict.
+- Produces `ResiliencePipelineResolver::resolve(string $name, ResilienceConfiguration $configuration, ResiliencePipelineFactory $factory, ?RandomSourceInterface $randomSource = null): ResiliencePipelineBuilder`; unknown names throw actionable `InvalidArgumentException`.
+- Loader input is the array returned from `config/resilience.php`, with `policies.<name>` plus optional `profiles.<profile>.policies.<name>`. A profile recursively merges associative maps while replacing lists/scalars; profile-only policy names are included. Profile and policy keys are strict.
 - Supported policy keys: `retry` (`max_attempts`, `backoff` with `type`, `base_delay_ms`, `max_delay_ms`, optional `allow_unsafe_retries`), `circuit_breaker` (`failure_threshold`, `open_duration_ms`, `half_open_probe_limit`), `bulkhead` (`max_concurrent`, `max_queued`), and `rate_limit` (`capacity`, `refill_per_second`, `max_wait_ms`). `backoff.type` accepts `fixed`, `exponential`, or `decorrelated_jitter`; jitter uses the existing injectable random source/default secure source.
 - Retry classification accepts optional `retry_on` and `do_not_retry_on` lists of existing throwable class names; every entry must exist and implement `Throwable`. Deny rules take precedence; when a non-empty allow list exists only matching failures retry; when omitted, preserve `DefaultFailureClassifier` behavior. Retry remains disabled for unsafe contexts unless `allow_unsafe_retries` is explicitly true, preserving current `RetryPolicy` defaults.
 - A policy without a section leaves that existing pipeline feature disabled; no hidden defaults activate policies.
