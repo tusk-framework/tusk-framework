@@ -235,9 +235,9 @@
 - [x] Run `vendor/bin/pint --test` on all touched PHP files.
 - [x] Run `git diff --check` and inspect the final diff for accidental generated files, static state, unbounded waits, or provider-specific imports.
 - [x] Run the existing CI-equivalent commands before opening the pull request.
-- [ ] Open the pull request with sections: Why, Architecture, API, Safety Semantics, Tests, Follow-up Phases, and Known Limitations.
+- [x] Open the pull request with the repository's required Context, Scope, Design, Verification, Compatibility, Risks, Reviewer guide, Checklist, and References sections.
 - [x] Request a code review using `superpowers:requesting-code-review`; address findings before merging.
-- [ ] Update issue #10 with the phase evidence and create/link follow-up issues; do not close it until its full acceptance criteria, including HTTP integration and runtime observability, are complete.
+- [x] Update issue #10 with the phase evidence and create/link follow-up issue #29; do not close #10 until its full acceptance criteria, including HTTP integration and runtime observability, are complete.
 
 ## Follow-up plans intentionally excluded from this cycle
 
