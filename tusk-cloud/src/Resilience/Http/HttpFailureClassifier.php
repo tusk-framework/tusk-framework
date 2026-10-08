@@ -19,7 +19,7 @@ final readonly class HttpFailureClassifier implements FailureClassifierInterface
     public function classify(Throwable $failure, OperationContext $context): FailureDecision
     {
         if ($failure instanceof RetryableResponseException) {
-            return self::isTransientStatus($failure->response()->getStatusCode())
+            return self::isRetryableStatus($failure->response()->getStatusCode())
                 ? FailureDecision::retryable()
                 : FailureDecision::terminal();
         }
@@ -35,7 +35,7 @@ final readonly class HttpFailureClassifier implements FailureClassifierInterface
         return $this->innerClassifier->classify($failure, $context);
     }
 
-    private static function isTransientStatus(int $status): bool
+    public static function isRetryableStatus(int $status): bool
     {
         return in_array($status, [408, 425, 429], true) || ($status >= 500 && $status <= 599);
     }
