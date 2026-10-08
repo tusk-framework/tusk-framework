@@ -6,6 +6,8 @@
     "require": {
         "php": "^8.2",
         "symfony/console": "^7.0",
+        "tusk/cloud": "self.version",
+        "tusk/config": "self.version",
         "tusk/contracts": "self.version",
         "tusk/core": "self.version",
         "tusk/runtime": "self.version"

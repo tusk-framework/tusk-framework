@@ -2,8 +2,10 @@
 
 namespace Tusk\Foundation;
 
-use DirectoryIterator;
 use RuntimeException;
+use Tusk\Cloud\Resilience\Configuration\ResilienceConfiguration;
+use Tusk\Cloud\Resilience\Configuration\ResilienceConfigurationLoader;
+use Tusk\Config\ProjectConfigurationLoader;
 use Tusk\Config\Repository;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Core\ApplicationInterface;
@@ -66,9 +68,17 @@ class ApplicationBuilder
 
     public function create(): Application
     {
+        $values = $this->loadConfig();
+        $resilienceValues = $values['resilience'] ?? [];
+        if (! is_array($resilienceValues)) {
+            throw new RuntimeException('Configuration at resilience must be an array.');
+        }
+        $profile = getenv('APP_ENV');
+        $profile = is_string($profile) && trim($profile) !== '' ? $profile : 'production';
+        $resilience = ResilienceConfigurationLoader::load($resilienceValues, $profile);
+
         $container = new Container;
         $router = new Router;
-        $values = $this->loadConfig();
         if ($this->jobs !== []) {
             if (! array_key_exists('runtime', $values)) {
                 $values['runtime'] = [];
@@ -103,6 +113,7 @@ class ApplicationBuilder
             RouterInterface::class => $router,
             Repository::class => $config,
             RuntimeConfiguration::class => $runtimeConfiguration,
+            ResilienceConfiguration::class => $resilience,
             HttpKernel::class => $kernel,
             Application::class => $application,
             ApplicationInterface::class => $application,
@@ -144,23 +155,7 @@ class ApplicationBuilder
 
     private function loadConfig(): array
     {
-        $directory = realpath($this->basePath.'/config');
-        if ($directory === false || ! is_dir($directory)) {
-            return [];
-        }
-
-        $values = [];
-        foreach (new DirectoryIterator($directory) as $entry) {
-            if ($entry->isFile() && $entry->getExtension() === 'php' && ! $entry->isLink()) {
-                $value = require $entry->getPathname();
-                if (! is_array($value)) {
-                    throw new RuntimeException("Config file must return an array: {$entry->getPathname()}");
-                }
-                $values[$entry->getBasename('.php')] = $value;
-            }
-        }
-
-        return $values;
+        return ProjectConfigurationLoader::load($this->basePath);
     }
 
     private function resolveFile(string $path, string $kind): string

@@ -2,9 +2,11 @@
 
 namespace Tusk\Core\Tests\Foundation;
 
+use InvalidArgumentException;
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use Tusk\Cloud\Resilience\Configuration\ResilienceConfiguration;
 use Tusk\Config\Repository;
 use Tusk\Contracts\Observability\TelemetryProviderInterface;
 use Tusk\Foundation\Application;
@@ -28,7 +30,7 @@ class ApplicationBuilderTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['config/app.php', 'config/runtime.php', 'config/ignored.txt', 'routes/web.php', 'bootstrap/providers.php'] as $file) {
+        foreach (['config/app.php', 'config/runtime.php', 'config/resilience.php', 'config/ignored.txt', 'routes/web.php', 'bootstrap/providers.php'] as $file) {
             if (is_file($this->basePath.'/'.$file)) {
                 unlink($this->basePath.'/'.$file);
             }
@@ -82,6 +84,55 @@ PHP);
 
         self::assertTrue($application->container()->has(RuntimeObservability::class));
         self::assertTrue($application->container()->has(TelemetryProviderInterface::class));
+    }
+
+    public function test_binds_validated_resilience_configuration_during_boot(): void
+    {
+        file_put_contents($this->basePath.'/config/resilience.php', '<?php return ["policies" => ["payments" => ["retry" => ["max_attempts" => 3]]]];');
+
+        $application = Application::configure($this->basePath)->create();
+
+        self::assertSame(3, $application->container()->get(ResilienceConfiguration::class)->policy('payments')?->retry()['max_attempts']);
+    }
+
+    public function test_uses_app_env_as_the_resilience_profile_during_boot(): void
+    {
+        file_put_contents($this->basePath.'/config/resilience.php', <<<'PHP'
+<?php
+
+return [
+    'policies' => ['payments' => ['retry' => ['max_attempts' => 2]]],
+    'profiles' => ['testing' => ['policies' => ['payments' => ['retry' => ['max_attempts' => 4]]]]],
+];
+PHP);
+        $previousProfile = getenv('APP_ENV');
+        putenv('APP_ENV=testing');
+
+        try {
+            $application = Application::configure($this->basePath)->create();
+        } finally {
+            if ($previousProfile === false) {
+                putenv('APP_ENV');
+            } else {
+                putenv('APP_ENV='.$previousProfile);
+            }
+        }
+
+        self::assertSame(4, $application->container()->get(ResilienceConfiguration::class)->policy('payments')?->retry()['max_attempts']);
+    }
+
+    public function test_invalid_resilience_configuration_fails_before_runtime_configuration_is_processed(): void
+    {
+        file_put_contents($this->basePath.'/config/resilience.php', '<?php return ["policies" => ["payments" => ["timeout" => "private-value"]]];');
+        file_put_contents($this->basePath.'/config/runtime.php', '<?php return ["runtime" => ["type" => "unsupported"]];');
+
+        try {
+            Application::configure($this->basePath)->create();
+            self::fail('Invalid resilience configuration did not fail application boot.');
+        } catch (InvalidArgumentException $exception) {
+            self::assertStringContainsString('resilience.policies.payments.timeout', $exception->getMessage());
+            self::assertStringNotContainsString('private-value', $exception->getMessage());
+        }
     }
 
     public function test_routes_and_providers_produce_psr7_response(): void
