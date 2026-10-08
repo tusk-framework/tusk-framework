@@ -9,6 +9,8 @@ use Tusk\Cloud\Resilience\ResiliencePipelineBuilder;
 use Tusk\Cloud\Resilience\ResiliencePipelineFactory;
 use Tusk\Cloud\Resilience\SystemClock;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
+use Tusk\Contracts\Observability\SpanInterface;
+use Tusk\Contracts\Observability\TelemetryProviderInterface;
 use Tusk\Contracts\Runtime\Capabilities\CapabilityRegistryInterface;
 use Tusk\Core\Container\Container;
 use Tusk\Runtime\RuntimeConfiguration;
@@ -52,7 +54,8 @@ final class RuntimeBootstrapIntegrationTest extends TestCase
 
     public function test_reused_worker_pipeline_does_not_leak_context_between_requests(): void
     {
-        $factory = new ResiliencePipelineFactory(new SystemClock, new InMemoryStateStore);
+        $telemetry = new ResilienceContextTelemetry;
+        $factory = new ResiliencePipelineFactory(new SystemClock, new InMemoryStateStore, telemetry: $telemetry);
         $controller = new ResilienceContextController($factory->pipeline('worker-operation'));
         $container = new Container;
         $container->instance(ResilienceContextController::class, $controller);
@@ -75,7 +78,47 @@ final class RuntimeBootstrapIntegrationTest extends TestCase
             ['orders.read', ['request_id' => 'request-one']],
             ['inventory.update', ['request_id' => 'request-two']],
         ], $controller->observedContexts);
+        self::assertSame([
+            ['tusk.resilience.operations', ['outcome' => 'success']],
+            ['tusk.resilience.operations', ['outcome' => 'success']],
+        ], $telemetry->increments);
+        self::assertCount(2, $telemetry->observations);
+        self::assertSame(
+            [
+                ['outcome' => 'success'],
+                ['outcome' => 'success'],
+            ],
+            array_column($telemetry->observations, 2),
+        );
     }
+}
+
+final class ResilienceContextTelemetry implements TelemetryProviderInterface
+{
+    /** @var list<array{string, array<string, scalar|null>}> */
+    public array $increments = [];
+
+    /** @var list<array{string, float, array<string, scalar|null>}> */
+    public array $observations = [];
+
+    public function startSpan(string $name, array $attributes = []): SpanInterface
+    {
+        throw new \LogicException('This test does not create spans.');
+    }
+
+    public function increment(string $name, int|float $value = 1, array $attributes = []): void
+    {
+        $this->increments[] = [$name, $attributes];
+    }
+
+    public function observe(string $name, float $value, array $attributes = []): void
+    {
+        $this->observations[] = [$name, $value, $attributes];
+    }
+
+    public function flush(): void {}
+
+    public function shutdown(): void {}
 }
 
 final class ResilienceContextController
