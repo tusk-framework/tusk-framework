@@ -53,6 +53,10 @@ final class RoadRunnerCapabilitiesModule implements RuntimeModuleInterface
         $this->registry = $registry;
         $container->instance(CapabilityProviderInterface::class, $provider);
         $container->instance(CapabilityRegistryInterface::class, $registry);
+
+        foreach ($this->capabilities as $capability) {
+            $container->instance($this->contractFor($capability), $registry->get($capability));
+        }
     }
 
     public function start(): void
@@ -61,9 +65,7 @@ final class RoadRunnerCapabilitiesModule implements RuntimeModuleInterface
             throw new LogicException('RoadRunner capabilities must be registered before they start.');
         }
 
-        foreach ($this->capabilities as $capability) {
-            $this->container->instance($this->contractFor($capability), $this->registry->get($capability));
-        }
+        // Capabilities are bound during registration so application lifecycle hooks can resolve them.
     }
 
     public function stop(): void {}
