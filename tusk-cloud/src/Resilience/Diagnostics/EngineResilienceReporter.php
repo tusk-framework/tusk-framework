@@ -136,24 +136,28 @@ final class EngineResilienceReporter implements WorkerLifecycleCheckpointInterfa
             return;
         }
 
-        curl_setopt_array($handle, [
-            CURLOPT_POST => true,
-            CURLOPT_HTTPHEADER => ['Authorization: Bearer '.$token, 'Content-Type: application/json'],
-            CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_MAXREDIRS => 0,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_NOSIGNAL => true,
-        ]);
-        $remainingMilliseconds = $deadline - $clock();
-        if ($remainingMilliseconds <= 0) {
-            return;
+        try {
+            curl_setopt_array($handle, [
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => ['Authorization: Bearer '.$token, 'Content-Type: application/json'],
+                CURLOPT_POSTFIELDS => $payload,
+                CURLOPT_FOLLOWLOCATION => false,
+                CURLOPT_MAXREDIRS => 0,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_NOSIGNAL => true,
+            ]);
+            $remainingMilliseconds = $deadline - $clock();
+            if ($remainingMilliseconds <= 0) {
+                return;
+            }
+            $timeoutMilliseconds = $remainingMilliseconds;
+            curl_setopt_array($handle, [
+                CURLOPT_TIMEOUT_MS => $timeoutMilliseconds,
+                CURLOPT_CONNECTTIMEOUT_MS => $timeoutMilliseconds,
+            ]);
+            curl_exec($handle);
+        } finally {
+            unset($handle);
         }
-        $timeoutMilliseconds = $remainingMilliseconds;
-        curl_setopt_array($handle, [
-            CURLOPT_TIMEOUT_MS => $timeoutMilliseconds,
-            CURLOPT_CONNECTTIMEOUT_MS => $timeoutMilliseconds,
-        ]);
-        curl_exec($handle);
     }
 }
