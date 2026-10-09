@@ -10,6 +10,7 @@ use Throwable;
 use Tusk\Contracts\Observability\SpanInterface;
 use Tusk\Contracts\Observability\TelemetryProviderInterface;
 use Tusk\Contracts\Observability\WorkerDiagnosticsInterface;
+use Tusk\Contracts\Observability\WorkerLifecycleCheckpointInterface;
 
 final class RuntimeObservability implements LifecycleObserverInterface, RequestScopeObserverInterface
 {
@@ -29,8 +30,12 @@ final class RuntimeObservability implements LifecycleObserverInterface, RequestS
         private readonly TelemetryProviderInterface $provider,
         private readonly WorkerDiagnosticsCollector $collector,
         private readonly DiagnosticsClockInterface $clock = new SystemDiagnosticsClock,
+        string $runtime = 'unknown',
         private readonly string $workerId = '',
-    ) {}
+        private readonly ?WorkerLifecycleCheckpointInterface $checkpoint = null,
+    ) {
+        $this->runtime = $runtime;
+    }
 
     public function setRuntime(string $runtime): void
     {
@@ -57,6 +62,7 @@ final class RuntimeObservability implements LifecycleObserverInterface, RequestS
     {
         $this->collector->workerStarted($this->workerId !== '' ? $this->workerId : (string) getmypid(), $this->runtime);
         $this->shortSpan('tusk.worker.start');
+        $this->sendCheckpoint('worker_started');
     }
 
     public function requestStarted(mixed $request = null): void
@@ -100,6 +106,7 @@ final class RuntimeObservability implements LifecycleObserverInterface, RequestS
         $this->requestStartedAt = null;
         $this->metricIncrement('tusk.requests.total', 1, ['status_code' => $status ?? 0]);
         $this->metricObserve('tusk.request.duration', $duration);
+        $this->sendCheckpoint('request_finished');
     }
 
     public function jobStarted(string $name, ?string $id = null): void
@@ -128,6 +135,7 @@ final class RuntimeObservability implements LifecycleObserverInterface, RequestS
         $this->jobName = null;
         $this->metricIncrement('tusk.jobs.total', 1, $attributes);
         $this->metricObserve('tusk.job.duration', $duration, $attributes);
+        $this->sendCheckpoint('job_finished');
     }
 
     public function workerStopped(): void
@@ -139,6 +147,7 @@ final class RuntimeObservability implements LifecycleObserverInterface, RequestS
             $this->collector->telemetryFailure($exception);
         } finally {
             $this->collector->workerStopped();
+            $this->sendCheckpoint('worker_stopped');
         }
     }
 
@@ -213,5 +222,14 @@ final class RuntimeObservability implements LifecycleObserverInterface, RequestS
         }
 
         return max(0.0, $this->clock->monotonicSeconds() - $startedAt);
+    }
+
+    private function sendCheckpoint(string $boundary): void
+    {
+        try {
+            $this->checkpoint?->checkpoint($boundary);
+        } catch (Throwable) {
+            // Optional diagnostics cannot change the lifecycle outcome.
+        }
     }
 }

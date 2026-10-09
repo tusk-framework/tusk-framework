@@ -50,6 +50,16 @@ php bin/tusk config:validate
 php bin/tusk config:validate --profile=staging
 ```
 
+### Runtime diagnostics for Engine
+
+The application container binds one worker-local `Tusk\Cloud\Resilience\Diagnostics\ResilienceRuntime`. Resolve a named policy through `$container->get(ResilienceRuntime::class)->pipeline('catalog.fetch')`; this uses the validated active `APP_ENV` profile. The runtime records the resolved policy name and enabled features (`retry`, `circuit_breaker`, `bulkhead`, `rate_limit`). `$runtime->diagnostics()` returns a detached snapshot of resolved policies and circuit states. A configured circuit remains `unknown` until its worker-local state store confirms `closed`, `open`, or `half_open`. This state is process memory, not persistent or shared across workers.
+
+When Tusk Engine supplies both `TUSK_ENGINE_RESILIENCE_DIAGNOSTICS_URL` and `TUSK_ENGINE_RESILIENCE_DIAGNOSTICS_TOKEN`, the optional reporter posts a complete snapshot to Engine's private listener. The URL must be an exact `http://127.0.0.1:<port>` base address. The reporter sends at worker start, after confirmed circuit transitions, and at worker stop. Completed requests and jobs trigger a coalesced heartbeat no more often than once every 15 seconds. Engine treats observations as stale after a 60-second lease. If either environment value is missing, the address is invalid, or PHP's curl extension is unavailable, reporting is a no-op.
+
+Diagnostic names are public labels. Use only ASCII letters, digits, underscore, dash, and dot, up to 128 bytes. If a resolved name violates this rule, or the snapshot exceeds Engine's 256-policy, 256-circuit, or 64 KiB bounds, the worker sends no snapshot rather than publishing a partial view; policy execution still works. Reports contain only policy names, enabled features, and circuit states. They exclude settings, throwable names and messages, request/response data, credentials, and process IDs. The opaque worker identifier and token are sent only to the private receiver and are not part of application metadata or logs.
+
+Each report makes one attempt with a 50 ms total timeout and redirects disabled. A failed or malformed response is swallowed; reporting cannot change a request, job, or policy result. Direct `new ResiliencePipelineFactory(...)` use keeps its existing semantics and is not registered as Engine-managed diagnostics.
+
 Retry remains one attempt by default and unsafe operations remain non-retryable unless `allow_unsafe_retries` is explicitly enabled. `retry_on` is an optional allow-list, `do_not_retry_on` is an optional deny-list that takes precedence, and omitting the allow-list preserves the existing default classifier. Keep retries limited to failures and operations that are safe to repeat.
 
 The readiness endpoint includes the local `resilience_configuration` check, which is registered only after successful boot validation and makes no network calls. Liveness remains an unconditional local `UP` response and does not execute readiness checks. In a persistent worker, keep configured pipelines reusable but create an `OperationContext` for each logical request/operation; its cancellation, deadline, and metadata are not retained by the shared configuration.

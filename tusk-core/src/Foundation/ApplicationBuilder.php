@@ -7,10 +7,17 @@ use Tusk\Cloud\Health\HealthCheckRegistry;
 use Tusk\Cloud\Health\ResilienceConfigurationHealthCheck;
 use Tusk\Cloud\Resilience\Configuration\ResilienceConfiguration;
 use Tusk\Cloud\Resilience\Configuration\ResilienceConfigurationLoader;
+use Tusk\Cloud\Resilience\Diagnostics\EngineResilienceReporter;
+use Tusk\Cloud\Resilience\Diagnostics\ResilienceDiagnosticsRegistry;
+use Tusk\Cloud\Resilience\Diagnostics\ResilienceRuntime;
+use Tusk\Cloud\Resilience\InMemoryStateStore;
+use Tusk\Cloud\Resilience\ResiliencePipelineFactory;
+use Tusk\Cloud\Resilience\SystemClock;
 use Tusk\Config\ProjectConfigurationLoader;
 use Tusk\Config\Repository;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Core\ApplicationInterface;
+use Tusk\Contracts\Observability\WorkerLifecycleCheckpointInterface;
 use Tusk\Core\Container\Container;
 use Tusk\Runtime\Jobs\JobHandlerRegistry;
 use Tusk\Runtime\Jobs\JobHandlerScanner;
@@ -78,10 +85,20 @@ class ApplicationBuilder
         $profile = getenv('APP_ENV');
         $profile = is_string($profile) && trim($profile) !== '' ? $profile : 'production';
         $resilience = ResilienceConfigurationLoader::load($resilienceValues, $profile);
+        $stateStore = new InMemoryStateStore;
+        $diagnosticsRegistry = new ResilienceDiagnosticsRegistry($stateStore);
+        $resilienceReporter = EngineResilienceReporter::fromEnvironment($diagnosticsRegistry);
+        $resilienceFactory = new ResiliencePipelineFactory(new SystemClock, $stateStore, registry: $diagnosticsRegistry, reporter: $resilienceReporter);
+        $resilienceRuntime = new ResilienceRuntime($resilience, $resilienceFactory, $diagnosticsRegistry);
         $healthChecks = new HealthCheckRegistry;
         $healthChecks->register(new ResilienceConfigurationHealthCheck);
 
         $container = new Container;
+        $container->instance(ResilienceDiagnosticsRegistry::class, $diagnosticsRegistry);
+        $container->instance(EngineResilienceReporter::class, $resilienceReporter);
+        $container->instance(WorkerLifecycleCheckpointInterface::class, $resilienceReporter);
+        $container->instance(ResiliencePipelineFactory::class, $resilienceFactory);
+        $container->instance(ResilienceRuntime::class, $resilienceRuntime);
         $router = new Router;
         if ($this->jobs !== []) {
             if (! array_key_exists('runtime', $values)) {

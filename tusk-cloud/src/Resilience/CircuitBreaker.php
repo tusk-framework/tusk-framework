@@ -17,6 +17,8 @@ final class CircuitBreaker implements CircuitBreakerInterface
 {
     private readonly string $key;
 
+    private readonly string $name;
+
     private readonly string $generationNamespace;
 
     private int $generationFloor = 0;
@@ -34,6 +36,7 @@ final class CircuitBreaker implements CircuitBreakerInterface
             throw new InvalidArgumentException('Circuit name cannot be blank.');
         }
 
+        $this->name = $name;
         $this->key = "cb:{$name}";
         $this->generationNamespace = bin2hex(random_bytes(16));
     }
@@ -268,7 +271,7 @@ final class CircuitBreaker implements CircuitBreakerInterface
     private function observeTransition(State $previous, State $current, OperationContext $context): void
     {
         if ($previous !== $current) {
-            $this->instrumentation?->circuitStateChanged(new CircuitStateChanged($context->operation(), $previous, $current));
+            $this->instrumentation?->circuitStateChanged(new CircuitStateChanged($context->operation(), $previous, $current), $this->name);
         }
     }
 }
