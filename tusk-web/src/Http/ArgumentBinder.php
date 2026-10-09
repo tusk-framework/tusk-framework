@@ -9,9 +9,18 @@ use ReflectionMethod;
 use ReflectionNamedType;
 use ReflectionParameter;
 use Tusk\Contracts\Container\ContainerInterface;
+use Tusk\Validation\CustomValidatorRegistry;
+use Tusk\Validation\Metadata\ValidationMetadataRegistry;
+use Tusk\Validation\ValidatorInterface;
 
 final class ArgumentBinder
 {
+    public function __construct(
+        private ?ValidatorInterface $validator = null,
+        private ?ValidationMetadataRegistry $metadata = null,
+        private ?CustomValidatorRegistry $customValidators = null,
+    ) {}
+
     /**
      * @return list<mixed>
      */
@@ -89,25 +98,44 @@ final class ArgumentBinder
         $constructor = $reflection->getConstructor();
 
         if ($constructor === null) {
-            return $reflection->newInstance();
+            return $this->validated($className, $reflection->newInstance(), []);
         }
 
         $arguments = [];
+        $constructorValues = [];
         foreach ($constructor->getParameters() as $parameter) {
             $name = $parameter->getName();
             if (! array_key_exists($name, $payload)) {
                 if ($parameter->isDefaultValueAvailable()) {
-                    $arguments[] = $parameter->getDefaultValue();
+                    $arguments[] = $constructorValues[$name] = $parameter->getDefaultValue();
                     continue;
                 }
 
                 throw new HttpException(422, "Missing request field: {$name}");
             }
 
-            $arguments[] = $this->cast($payload[$name], $parameter->getType(), $name);
+            $arguments[] = $constructorValues[$name] = $this->cast($payload[$name], $parameter->getType(), $name);
         }
 
-        return $reflection->newInstanceArgs($arguments);
+        return $this->validated($className, $reflection->newInstanceArgs($arguments), $constructorValues);
+    }
+
+    /** @param array<string, mixed> $constructorValues */
+    private function validated(string $className, object $dto, array $constructorValues): object
+    {
+        if ($this->validator !== null && $this->metadata !== null && $this->customValidators !== null) {
+            $result = $this->validator->validate(
+                $dto,
+                $this->metadata->metadataFor($className),
+                $constructorValues,
+                $this->customValidators->for($className),
+            );
+            if (! $result->isValid()) {
+                throw new ValidationException($result->violations());
+            }
+        }
+
+        return $dto;
     }
 
     private function cast(mixed $value, ?\ReflectionType $type, string $name): mixed

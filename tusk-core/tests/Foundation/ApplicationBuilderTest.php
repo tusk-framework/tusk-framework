@@ -23,9 +23,47 @@ use Tusk\Runtime\Observability\RuntimeObservability;
 use Tusk\Runtime\RuntimeConfiguration;
 use Tusk\Web\HttpKernel;
 use Tusk\Web\Router\Router;
+use Tusk\Validation\Constraint\NotBlank;
+use Tusk\Validation\CustomValidatorInterface;
+use Tusk\Validation\CustomValidatorRegistry;
+use Tusk\Validation\Metadata\ValidationMetadataRegistry;
+use Tusk\Validation\Violation;
 
 class ApplicationBuilderTest extends TestCase
 {
+    public function test_prepared_validators_run_with_constraints_and_do_not_leak_to_next_request(): void
+    {
+        file_put_contents($this->basePath.'/routes/web.php', <<<'PHP'
+<?php
+return static function (\Tusk\Web\Router\Router $router): void {
+    $router->addRoute(['POST'], '/validated', [\Tusk\Core\Tests\Foundation\ValidationController::class, 'accepted']);
+};
+PHP);
+        file_put_contents($this->basePath.'/bootstrap/providers.php', <<<'PHP'
+<?php
+return static function (\Tusk\Core\Container\Container $container): void {
+    $container->instance(\Tusk\Core\Tests\Foundation\ValidationService::class, new \Tusk\Core\Tests\Foundation\ValidationService());
+    $container->instance(\Tusk\Core\Tests\Foundation\ValidationController::class, new \Tusk\Core\Tests\Foundation\ValidationController());
+};
+PHP);
+        $application = Application::configure($this->basePath)
+            ->withRouting(web: 'routes/web.php')
+            ->withProviders(['bootstrap/providers.php'])
+            ->withValidator(ValidInput::class, RejectBlankInputValidator::class)
+            ->create();
+
+        $invalid = $application->handle((new ServerRequest('POST', '/validated'))->withHeader('Accept', 'application/json')->withParsedBody(['name' => ' ']));
+        $problem = json_decode((string) $invalid->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame(422, $invalid->getStatusCode());
+        self::assertSame(['name' => [
+            ['code' => 'not_blank', 'message' => 'This value should not be blank.'],
+            ['code' => 'name.rejected', 'message' => 'Name is rejected.'],
+        ]], $problem['errors']);
+
+        $valid = $application->handle((new ServerRequest('POST', '/validated'))->withHeader('Accept', 'application/json')->withParsedBody(['name' => 'Ada']));
+        self::assertSame(200, $valid->getStatusCode());
+        self::assertSame(['name' => 'Ada'], json_decode((string) $valid->getBody(), true, flags: JSON_THROW_ON_ERROR));
+    }
     private string $basePath;
 
     protected function setUp(): void
@@ -528,6 +566,171 @@ PHP);
             rmdir($this->basePath.'/app');
         }
     }
+
+    public function test_explicit_route_metadata_is_compiled_and_sealed_before_create_returns(): void
+    {
+        file_put_contents($this->basePath.'/routes/web.php', <<<'PHP'
+<?php
+return static function (\Tusk\Web\Router\Router $router): void {
+    $router->addRoute(['POST'], '/input', [\Tusk\Core\Tests\Foundation\ValidationController::class, 'submit']);
+};
+PHP);
+
+        $application = Application::configure($this->basePath)->withRouting(web: 'routes/web.php')->create();
+        $registry = $application->container()->get(ValidationMetadataRegistry::class);
+        self::assertSame(['name'], $registry->metadataFor(ValidInput::class)->fields());
+        $this->expectException(\LogicException::class);
+        $registry->register('LateDto', $registry->metadataFor(ValidInput::class));
+    }
+
+    public function test_invalid_explicit_route_dto_metadata_aborts_create(): void
+    {
+        file_put_contents($this->basePath.'/routes/web.php', <<<'PHP'
+<?php
+return static function (\Tusk\Web\Router\Router $router): void {
+    $router->addRoute(['POST'], '/invalid', [\Tusk\Core\Tests\Foundation\ValidationController::class, 'invalid']);
+};
+PHP);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('string');
+        Application::configure($this->basePath)->withRouting(web: 'routes/web.php')->create();
+    }
+
+    public function test_invalid_discovered_route_dto_metadata_aborts_create(): void
+    {
+        mkdir($this->basePath.'/app/Controller', 0777, true);
+        file_put_contents($this->basePath.'/app/Controller/Invalid.php', <<<'PHP'
+<?php
+namespace TuskBuilderInvalidMetadata;
+#[\Tusk\Web\Attribute\Controller('/invalid')]
+final class Invalid
+{
+    #[\Tusk\Web\Attribute\Post]
+    public function submit(\Tusk\Core\Tests\Foundation\InvalidInput $input): void {}
+}
+PHP);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('string');
+        Application::configure($this->basePath)->create();
+    }
+
+    public function test_custom_validators_resolve_in_order_with_provider_dependencies_and_only_for_their_dto(): void
+    {
+        file_put_contents($this->basePath.'/bootstrap/providers.php', <<<'PHP'
+<?php
+return static function (\Tusk\Core\Container\Container $container): void {
+    $container->instance(\Tusk\Core\Tests\Foundation\ValidationService::class, new \Tusk\Core\Tests\Foundation\ValidationService());
+};
+PHP);
+
+        $application = Application::configure($this->basePath)
+            ->withProviders(['bootstrap/providers.php'])
+            ->withValidator(ValidInput::class, InjectedInputValidator::class)
+            ->withValidator(ValidInput::class, SecondInputValidator::class)
+            ->create();
+        $registry = $application->container()->get(CustomValidatorRegistry::class);
+
+        self::assertSame([InjectedInputValidator::class, SecondInputValidator::class], array_map(
+            static fn (CustomValidatorInterface $validator): string => $validator::class,
+            $registry->for(ValidInput::class),
+        ));
+        self::assertSame('available', $registry->for(ValidInput::class)[0]->service->value);
+        self::assertSame($registry->for(ValidInput::class)[0], $registry->for(ValidInput::class)[0]);
+        self::assertSame([], $registry->for(InvalidInput::class));
+    }
+
+    public function test_custom_validator_prototype_scope_is_resolved_for_each_validation(): void
+    {
+        PrototypeInputValidator::$instancesCreated = 0;
+        $application = Application::configure($this->basePath)
+            ->withValidator(ValidInput::class, PrototypeInputValidator::class)
+            ->create();
+        $registry = $application->container()->get(CustomValidatorRegistry::class);
+
+        self::assertSame(0, PrototypeInputValidator::$instancesCreated);
+        self::assertNotSame(
+            $registry->for(ValidInput::class)[0],
+            $registry->for(ValidInput::class)[0],
+        );
+        self::assertSame(2, PrototypeInputValidator::$instancesCreated);
+    }
+
+    public function test_custom_validator_request_scope_uses_a_fresh_instance_after_scope_reset(): void
+    {
+        RequestScopedInputValidator::$instancesCreated = 0;
+        $application = Application::configure($this->basePath)
+            ->withValidator(ValidInput::class, RequestScopedInputValidator::class)
+            ->create();
+        $registry = $application->container()->get(CustomValidatorRegistry::class);
+        $container = $application->container();
+        self::assertSame(0, RequestScopedInputValidator::$instancesCreated);
+
+        $container->runLifecycleHooks('application.start');
+        $container->runLifecycleHooks('worker.start');
+
+        self::assertSame(0, RequestScopedInputValidator::$instancesCreated);
+        $first = $registry->for(ValidInput::class)[0];
+        self::assertSame(1, RequestScopedInputValidator::$instancesCreated);
+
+        $container->resetScope('request');
+
+        self::assertNotSame($first, $registry->for(ValidInput::class)[0]);
+        self::assertSame(2, RequestScopedInputValidator::$instancesCreated);
+    }
+
+    public function test_custom_validator_worker_scope_uses_a_fresh_instance_after_scope_reset(): void
+    {
+        WorkerScopedInputValidator::$instancesCreated = 0;
+        $application = Application::configure($this->basePath)
+            ->withValidator(ValidInput::class, WorkerScopedInputValidator::class)
+            ->create();
+        $registry = $application->container()->get(CustomValidatorRegistry::class);
+        $container = $application->container();
+        $first = $registry->for(ValidInput::class)[0];
+
+        self::assertSame($first, $registry->for(ValidInput::class)[0]);
+        $container->resetScope('worker');
+
+        self::assertNotSame($first, $registry->for(ValidInput::class)[0]);
+        self::assertSame(2, WorkerScopedInputValidator::$instancesCreated);
+    }
+
+    public function test_duplicate_custom_validator_registration_is_rejected(): void
+    {
+        $builder = Application::configure($this->basePath)->withValidator(ValidInput::class, SecondInputValidator::class);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('already registered');
+        $builder->withValidator(ValidInput::class, SecondInputValidator::class);
+    }
+
+    public function test_invalid_custom_validator_fails_during_create_with_class_context(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage(BootstrapController::class);
+        Application::configure($this->basePath)
+            ->withValidator(ValidInput::class, BootstrapController::class)
+            ->create();
+    }
+
+    public function test_abstract_custom_validator_fails_during_create_without_instantiation(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage(AbstractInputValidator::class);
+        Application::configure($this->basePath)
+            ->withValidator(ValidInput::class, AbstractInputValidator::class)
+            ->create();
+    }
+
+    public function test_custom_validator_with_lifecycle_hooks_fails_during_create(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('must not declare lifecycle hooks');
+        Application::configure($this->basePath)
+            ->withValidator(ValidInput::class, HookedRequestScopedInputValidator::class)
+            ->create();
+    }
 }
 
 class BootstrapController
@@ -535,5 +738,127 @@ class BootstrapController
     public function hello(): string
     {
         return 'hello from Tusk';
+    }
+}
+
+final readonly class ValidInput
+{
+    public function __construct(#[NotBlank] public string $name) {}
+}
+
+final readonly class InvalidInput
+{
+    public function __construct(#[NotBlank] public int $count) {}
+}
+
+final class ValidationController
+{
+    public function submit(ValidInput $input): void {}
+
+    public function accepted(ValidInput $input): array { return ['name' => $input->name]; }
+
+    public function invalid(InvalidInput $input): void {}
+}
+
+final class RejectBlankInputValidator implements CustomValidatorInterface
+{
+    public function __construct(private ValidationService $service) {}
+
+    public function validate(object $value): iterable
+    {
+        if ($this->service->value === 'available' && $value instanceof ValidInput && trim($value->name) === '') {
+            yield new Violation('name', 'name.rejected', 'Name is rejected.');
+        }
+    }
+}
+
+final readonly class ValidationService
+{
+    public string $value;
+
+    public function __construct()
+    {
+        $this->value = 'available';
+    }
+}
+
+final class InjectedInputValidator implements CustomValidatorInterface
+{
+    public function __construct(public ValidationService $service) {}
+
+    public function validate(object $value): iterable
+    {
+        return [];
+    }
+}
+
+final class SecondInputValidator implements CustomValidatorInterface
+{
+    public function validate(object $value): iterable
+    {
+        return [];
+    }
+}
+
+#[\Tusk\Contracts\Attributes\Service(scope: 'prototype')]
+final class PrototypeInputValidator implements CustomValidatorInterface
+{
+    public static int $instancesCreated = 0;
+
+    public function __construct()
+    {
+        self::$instancesCreated++;
+    }
+
+    public function validate(object $value): iterable
+    {
+        return [];
+    }
+}
+
+#[\Tusk\Contracts\Attributes\Service(scope: 'request')]
+final class RequestScopedInputValidator implements CustomValidatorInterface
+{
+    public static int $instancesCreated = 0;
+
+    public function __construct()
+    {
+        self::$instancesCreated++;
+    }
+
+    public function validate(object $value): iterable
+    {
+        return [];
+    }
+}
+
+#[\Tusk\Contracts\Attributes\Service(scope: 'request')]
+abstract class AbstractInputValidator implements CustomValidatorInterface {}
+
+#[\Tusk\Contracts\Attributes\Service(scope: 'request')]
+final class HookedRequestScopedInputValidator implements CustomValidatorInterface
+{
+    #[\Tusk\Contracts\Attributes\OnWorkerStart]
+    public function startWorker(): void {}
+
+    public function validate(object $value): iterable
+    {
+        return [];
+    }
+}
+
+#[\Tusk\Contracts\Attributes\Service(scope: 'worker')]
+final class WorkerScopedInputValidator implements CustomValidatorInterface
+{
+    public static int $instancesCreated = 0;
+
+    public function __construct()
+    {
+        self::$instancesCreated++;
+    }
+
+    public function validate(object $value): iterable
+    {
+        return [];
     }
 }

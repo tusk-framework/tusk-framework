@@ -82,6 +82,20 @@ final class LifecycleJobHandler implements JobHandlerInterface
 
 final class LifecycleHooksTest extends TestCase
 {
+    public function test_lifecycle_events_do_not_instantiate_services_without_hooks_for_that_event(): void
+    {
+        NoLifecycleHookService::$instancesCreated = 0;
+        $container = new Container;
+        $container->register(NoLifecycleHookService::class, 'prototype');
+
+        $container->runLifecycleHooks('application.start');
+        $container->runLifecycleHooks('worker.start');
+
+        self::assertSame(0, NoLifecycleHookService::$instancesCreated);
+        $container->get(NoLifecycleHookService::class);
+        self::assertSame(1, NoLifecycleHookService::$instancesCreated);
+    }
+
     public function test_job_hooks_are_distinct_and_job_scope_is_reset_between_deliveries(): void
     {
         $container = new Container;
@@ -146,5 +160,15 @@ final class LifecycleHooksTest extends TestCase
         }
 
         self::assertSame(['first', 'second'], $container->get(FailingTeardownService::class)->events);
+    }
+}
+
+final class NoLifecycleHookService
+{
+    public static int $instancesCreated = 0;
+
+    public function __construct()
+    {
+        self::$instancesCreated++;
     }
 }

@@ -12,6 +12,7 @@ use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Web\Http\ArgumentBinder;
 use Tusk\Web\Http\HttpException;
 use Tusk\Web\Http\MiddlewarePipeline;
+use Tusk\Web\Http\ValidationException;
 use Tusk\Web\Router\RouteMatch;
 use Tusk\Web\Router\RouterInterface;
 
@@ -24,9 +25,10 @@ class HttpKernel implements RequestHandlerInterface
 
     public function __construct(
         private ContainerInterface $container,
-        private RouterInterface $router
+        private RouterInterface $router,
+        ?ArgumentBinder $argumentBinder = null,
     ) {
-        $this->argumentBinder = new ArgumentBinder;
+        $this->argumentBinder = $argumentBinder ?? new ArgumentBinder;
     }
 
     public function addMiddleware(string $middlewareClass): self
@@ -119,15 +121,19 @@ class HttpKernel implements RequestHandlerInterface
             $debug = self::isDebugEnabled();
             $headers = ['X-Request-Id' => $requestId];
 
-            if (str_contains(strtolower($request->getHeaderLine('Accept')), 'application/json')) {
+            $accept = strtolower($request->getHeaderLine('Accept'));
+            if (str_contains($accept, 'application/json') || str_contains($accept, 'application/problem+json')) {
+                $validationError = $e instanceof ValidationException;
                 $payload = [
-                    'type' => 'about:blank',
+                    'type' => $validationError ? 'urn:tusk:problem:validation' : 'about:blank',
                     'title' => $e instanceof HttpException ? $e->getMessage() : 'Internal Server Error',
                     'status' => $status,
                     'instance' => (string) $request->getUri()->getPath(),
                     'request_id' => $requestId,
                 ];
-                if ($debug) {
+                if ($validationError) {
+                    $payload['errors'] = $e->errors();
+                } elseif ($debug) {
                     $payload['exception'] = get_class($e);
                     $payload['message'] = $e->getMessage();
                     $payload['file'] = $e->getFile();
@@ -139,7 +145,7 @@ class HttpKernel implements RequestHandlerInterface
 
             $title = $status === 500 ? 'Internal Server Error' : $e->getMessage();
             $details = '';
-            if ($debug) {
+            if ($debug && ! $e instanceof ValidationException) {
                 $details = sprintf(
                     '<div class="debug-info"><h2>%s</h2><p>%s</p><p>%s:%d</p><pre>%s</pre></div>',
                     htmlspecialchars(get_class($e), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),

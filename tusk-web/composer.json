@@ -5,7 +5,8 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
-        "tusk/contracts": "self.version"
+        "tusk/contracts": "self.version",
+        "tusk/validation": "self.version"
     },
     "autoload": {
         "psr-4": {

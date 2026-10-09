@@ -15,6 +15,7 @@
             <directory>tusk-events/tests</directory>
             <directory>tusk-data/tests</directory>
             <directory>tusk-cloud/tests</directory>
+            <directory>tusk-validation/tests</directory>
         </testsuite>
     </testsuites>
     <php>
