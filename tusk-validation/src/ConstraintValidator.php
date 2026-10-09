@@ -6,15 +6,23 @@ use Tusk\Validation\Constraint\Email;
 use Tusk\Validation\Constraint\Length;
 use Tusk\Validation\Constraint\NotBlank;
 use Tusk\Validation\Metadata\ValidationMetadata;
+use InvalidArgumentException;
 
 final class ConstraintValidator
 {
     /** @return list<Violation> */
-    public function validate(object $value, ValidationMetadata $metadata): array
+    /** @param array<string, mixed> $constructorValues */
+    public function validate(ValidationMetadata $metadata, array $constructorValues): array
     {
         $violations = [];
         foreach ($metadata->fields() as $field) {
-            $fieldValue = $value->$field;
+            if (!array_key_exists($field, $constructorValues)) {
+                throw new InvalidArgumentException(sprintf(
+                    'Missing constructor value for validated field "%s"; include any constructor default.',
+                    $field,
+                ));
+            }
+            $fieldValue = $constructorValues[$field];
             foreach ($metadata->constraintsFor($field) as $constraint) {
                 if ($constraint instanceof NotBlank && ($fieldValue === null || (is_string($fieldValue) && preg_match('/^\\s*$/u', $fieldValue) === 1))) {
                     $violations[] = new Violation($field, 'not_blank', 'This value should not be blank.');

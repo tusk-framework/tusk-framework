@@ -28,4 +28,10 @@ final class ConstraintTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         new Length(min: 4, max: 3);
     }
+
+    public function test_length_rejects_negative_maximum(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new Length(max: -1);
+    }
 }

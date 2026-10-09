@@ -10,9 +10,14 @@ final class Validator implements ValidatorInterface
     {
     }
 
-    public function validate(object $value, ValidationMetadata $metadata, iterable $customValidators = []): ValidationResult
+    public function validate(
+        object $value,
+        ValidationMetadata $metadata,
+        iterable $customValidators = [],
+        array $constructorValues = [],
+    ): ValidationResult
     {
-        $violations = $this->constraintValidator->validate($value, $metadata);
+        $violations = $this->constraintValidator->validate($metadata, $constructorValues);
         foreach ($customValidators as $customValidator) {
             if (!$customValidator instanceof CustomValidatorInterface) {
                 throw new \InvalidArgumentException('Custom validators must implement CustomValidatorInterface.');
