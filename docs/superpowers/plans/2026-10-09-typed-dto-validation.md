@@ -112,13 +112,13 @@
 - Debug mode must not expose values, stack traces, or internal validator exceptions for validation failures. Non-validation exception debug behavior remains unchanged.
 - `Request` and `ServerRequestInterface` parameters bypass automatic DTO validation.
 
-- [ ] **Step 1: Write failing binder tests** for successful DTO validation, one/multiple constraint violations, aggregation with custom validators, and unchanged missing-field/scalar-conversion behavior.
-- [ ] **Step 2: Run focused binder tests and confirm validation cases fail** before implementation.
-- [ ] **Step 3: Wire the prepared validator into the binder** and validate only after successful DTO hydration.
-- [ ] **Step 4: Write failing kernel tests** for exact 422 Problem Details shape, `application/problem+json`, safe messages/codes, and debug redaction.
-- [ ] **Step 5: Implement typed validation error rendering** without changing ordinary binding errors or non-validation exception handling.
-- [ ] **Step 6: Add a persistent-worker regression test** sending invalid then valid requests and asserting the second response contains no violations or submitted data from the first request.
-- [ ] **Step 7: Run binder, kernel, and application preparation tests** and verify all pass.
+- [x] **Step 1: Write failing binder tests** for successful DTO validation, one/multiple constraint violations, aggregation with custom validators, and unchanged missing-field/scalar-conversion behavior.
+- [x] **Step 2: Run focused binder tests and confirm validation cases fail** before implementation.
+- [x] **Step 3: Wire the prepared validator into the binder** and validate only after successful DTO hydration.
+- [x] **Step 4: Write failing kernel tests** for exact 422 Problem Details shape, `application/problem+json`, safe messages/codes, and debug redaction.
+- [x] **Step 5: Implement typed validation error rendering** without changing ordinary binding errors or non-validation exception handling.
+- [x] **Step 6: Add a persistent-worker regression test** sending invalid then valid requests and asserting the second response contains no violations or submitted data from the first request.
+- [x] **Step 7: Run binder, kernel, and application preparation tests** and verify all pass.
 
 ### Task 4: Document the supported validation model and verify the whole framework
 
@@ -132,9 +132,9 @@
 - Documentation covers the built-in attributes, constructor DTO example, explicit custom validator registration, 422 Problem Details shape, domain-validation boundary, worker safety, and PSR escape hatch.
 - Explicitly state unsupported nested DTO, enum/union conversion, arbitrary payload validation, and automatic database checks.
 
-- [ ] **Step 1: Document a minimal immutable DTO example** with built-in constraints and the exact field-error response contract.
-- [ ] **Step 2: Document a custom validator registration example** showing service injection while keeping persistence/domain policy application-owned.
-- [ ] **Step 3: Validate Composer manifests** with `composer validate --strict`.
-- [ ] **Step 4: Run the full suite** with `vendor/bin/phpunit --testdox`.
-- [ ] **Step 5: Run PHPStan, Pint on touched PHP files, and `git diff --check`**; report pre-existing findings separately and require no new findings.
+- [x] **Step 1: Document a minimal immutable DTO example** with built-in constraints and the exact field-error response contract.
+- [x] **Step 2: Document a custom validator registration example** showing service injection while keeping persistence/domain policy application-owned.
+- [x] **Step 3: Validate Composer manifests** with `composer validate --strict`.
+- [x] **Step 4: Run the full suite** with `vendor/bin/phpunit --testdox`.
+- [x] **Step 5: Run PHPStan, Pint on touched PHP files, and `git diff --check`**; report pre-existing findings separately and require no new findings.
 - [ ] **Step 6: Review issue #11/#12 acceptance criteria** and update their progress only after the implementation PR is merged; do not mark either issue complete based on this feature alone.
