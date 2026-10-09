@@ -83,7 +83,7 @@
 - `ValidationMetadataRegistry::register(string $dtoClass, ValidationMetadata $metadata): void`, `metadataFor(string $dtoClass): ValidationMetadata`, and `seal(): void` provide a boot-populated, immutable-at-request-time metadata registry.
 - `CustomValidatorRegistry::for(string $dtoClass): list<CustomValidatorInterface>` returns only validators explicitly associated with that DTO.
 - Application preparation compiles metadata for every routed class-typed controller parameter that is not the Tusk request wrapper, a PSR server request, or a container-bound service; this includes explicit controller routes and discovered attributed controllers. Invalid metadata aborts `create()` before returning an application.
-- Registered custom validators are resolved from the application container during preparation and grouped by DTO; Task 3 injects the matching list so `Validator` aggregates them with built-in validation at request time. Arbitrary class names from request data are never resolved.
+- Registered custom validators are grouped by DTO during preparation and exposed through sealed factories that resolve via the application container when validation runs. Singleton/worker services are resolved during preparation to fail fast; request/prototype services are not instantiated until use, preserving their lifecycle and avoiding boot-time request-scoped dependencies. Arbitrary class names from request data are never resolved.
 
 - [ ] **Step 1: Add failing router tests** proving explicit array/class-method handlers and discovered handlers can be enumerated in registration order without changing route matching.
 - [ ] **Step 2: Add failing builder tests** proving custom validator registration and invalid DTO metadata fail during `create()` before an HTTP request is handled.
@@ -138,3 +138,7 @@
 - [x] **Step 4: Run the full suite** with `vendor/bin/phpunit --testdox`.
 - [x] **Step 5: Run PHPStan, Pint on touched PHP files, and `git diff --check`**; report pre-existing findings separately and require no new findings.
 - [ ] **Step 6: Review issue #11/#12 acceptance criteria** and update their progress only after the implementation PR is merged; do not mark either issue complete based on this feature alone.
+
+### Scope-safety ruling (final review)
+
+- Keep custom-validator factories in the sealed registry rather than validator instances. Singleton/worker validators are pre-resolved during `create()` for fail-fast container validation; request/prototype validators are class/contract checked at boot but instantiated only when the registry resolves them during validation. This prevents creating request-scoped objects before a request exists and lets container resets/prototype lifetimes remain effective. Constructor/dependency resolution failures for request/prototype validators therefore surface on first use rather than during `create()`.

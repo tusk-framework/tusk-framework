@@ -37,6 +37,7 @@ The initial implementation must use Tusk's existing boot/container composition a
 
 - Built-in constraints are small immutable attributes with constructor-validated options and stable violation codes.
 - Custom application validators are explicit services registered through the application/container integration. Their contract receives the DTO and returns violations; it must not mutate the DTO or retain request data between calls.
+- The sealed custom-validator registry stores factories, not service instances. Singleton/worker validators are resolved during preparation; request/prototype validators are checked for class and contract validity at boot but instantiated on first validation so their container lifecycle is honored. Constructor/dependency-resolution errors for request/prototype validators therefore surface on first use.
 - The validator aggregates built-in and custom violations deterministically. Ordering is stable by DTO field declaration then constraint registration order, so tests and clients do not see nondeterministic error arrays.
 - Custom validators may use application services, but the framework does not infer their dependencies from attribute constructors or instantiate arbitrary class names from request data.
 

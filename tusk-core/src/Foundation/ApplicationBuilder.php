@@ -6,6 +6,7 @@ use FilesystemIterator;
 use Psr\Http\Message\ServerRequestInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
+use ReflectionClass;
 use ReflectionMethod;
 use ReflectionNamedType;
 use RuntimeException;
@@ -274,16 +275,22 @@ class ApplicationBuilder
                 if (! class_exists($validatorClass) || ! is_subclass_of($validatorClass, CustomValidatorInterface::class)) {
                     throw new RuntimeException("Custom validator {$validatorClass} for {$dtoClass} must implement ".CustomValidatorInterface::class.'.');
                 }
+                if (! (new ReflectionClass($validatorClass))->isInstantiable()) {
+                    throw new RuntimeException("Custom validator {$validatorClass} for {$dtoClass} must be instantiable.");
+                }
                 if (! $container->has($validatorClass)) {
                     $container->register($validatorClass, 'singleton');
                 }
-                try {
-                    $validator = $container->get($validatorClass);
-                } catch (\Throwable $exception) {
-                    throw new RuntimeException("Unable to resolve custom validator {$validatorClass} for {$dtoClass}: {$exception->getMessage()}", 0, $exception);
-                }
-                if (! $validator instanceof CustomValidatorInterface) {
-                    throw new RuntimeException("Custom validator service {$validatorClass} for {$dtoClass} must implement ".CustomValidatorInterface::class.'.');
+                $scope = $container->export()['scopes'][$validatorClass] ?? null;
+                if (! in_array($scope, ['request', 'prototype'], true)) {
+                    try {
+                        $validator = $container->get($validatorClass);
+                    } catch (\Throwable $exception) {
+                        throw new RuntimeException("Unable to resolve custom validator {$validatorClass} for {$dtoClass}: {$exception->getMessage()}", 0, $exception);
+                    }
+                    if (! $validator instanceof CustomValidatorInterface) {
+                        throw new RuntimeException("Custom validator service {$validatorClass} for {$dtoClass} must implement ".CustomValidatorInterface::class.'.');
+                    }
                 }
                 $registry->registerFactory($dtoClass, static function () use ($container, $validatorClass, $dtoClass): CustomValidatorInterface {
                     $resolved = $container->get($validatorClass);

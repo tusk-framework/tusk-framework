@@ -637,34 +637,59 @@ PHP);
             $registry->for(ValidInput::class),
         ));
         self::assertSame('available', $registry->for(ValidInput::class)[0]->service->value);
+        self::assertSame($registry->for(ValidInput::class)[0], $registry->for(ValidInput::class)[0]);
         self::assertSame([], $registry->for(InvalidInput::class));
     }
 
     public function test_custom_validator_prototype_scope_is_resolved_for_each_validation(): void
     {
+        PrototypeInputValidator::$instancesCreated = 0;
         $application = Application::configure($this->basePath)
             ->withValidator(ValidInput::class, PrototypeInputValidator::class)
             ->create();
         $registry = $application->container()->get(CustomValidatorRegistry::class);
 
+        self::assertSame(0, PrototypeInputValidator::$instancesCreated);
         self::assertNotSame(
             $registry->for(ValidInput::class)[0],
             $registry->for(ValidInput::class)[0],
         );
+        self::assertSame(2, PrototypeInputValidator::$instancesCreated);
     }
 
     public function test_custom_validator_request_scope_uses_a_fresh_instance_after_scope_reset(): void
     {
+        RequestScopedInputValidator::$instancesCreated = 0;
         $application = Application::configure($this->basePath)
             ->withValidator(ValidInput::class, RequestScopedInputValidator::class)
             ->create();
         $registry = $application->container()->get(CustomValidatorRegistry::class);
         $container = $application->container();
+        self::assertSame(0, RequestScopedInputValidator::$instancesCreated);
         $first = $registry->for(ValidInput::class)[0];
+        self::assertSame(1, RequestScopedInputValidator::$instancesCreated);
 
         $container->resetScope('request');
 
         self::assertNotSame($first, $registry->for(ValidInput::class)[0]);
+        self::assertSame(2, RequestScopedInputValidator::$instancesCreated);
+    }
+
+    public function test_custom_validator_worker_scope_uses_a_fresh_instance_after_scope_reset(): void
+    {
+        WorkerScopedInputValidator::$instancesCreated = 0;
+        $application = Application::configure($this->basePath)
+            ->withValidator(ValidInput::class, WorkerScopedInputValidator::class)
+            ->create();
+        $registry = $application->container()->get(CustomValidatorRegistry::class);
+        $container = $application->container();
+        $first = $registry->for(ValidInput::class)[0];
+
+        self::assertSame($first, $registry->for(ValidInput::class)[0]);
+        $container->resetScope('worker');
+
+        self::assertNotSame($first, $registry->for(ValidInput::class)[0]);
+        self::assertSame(2, WorkerScopedInputValidator::$instancesCreated);
     }
 
     public function test_duplicate_custom_validator_registration_is_rejected(): void
@@ -681,6 +706,15 @@ PHP);
         $this->expectExceptionMessage(BootstrapController::class);
         Application::configure($this->basePath)
             ->withValidator(ValidInput::class, BootstrapController::class)
+            ->create();
+    }
+
+    public function test_abstract_custom_validator_fails_during_create_without_instantiation(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage(AbstractInputValidator::class);
+        Application::configure($this->basePath)
+            ->withValidator(ValidInput::class, AbstractInputValidator::class)
             ->create();
     }
 }
@@ -755,6 +789,13 @@ final class SecondInputValidator implements CustomValidatorInterface
 #[\Tusk\Contracts\Attributes\Service(scope: 'prototype')]
 final class PrototypeInputValidator implements CustomValidatorInterface
 {
+    public static int $instancesCreated = 0;
+
+    public function __construct()
+    {
+        self::$instancesCreated++;
+    }
+
     public function validate(object $value): iterable
     {
         return [];
@@ -764,6 +805,32 @@ final class PrototypeInputValidator implements CustomValidatorInterface
 #[\Tusk\Contracts\Attributes\Service(scope: 'request')]
 final class RequestScopedInputValidator implements CustomValidatorInterface
 {
+    public static int $instancesCreated = 0;
+
+    public function __construct()
+    {
+        self::$instancesCreated++;
+    }
+
+    public function validate(object $value): iterable
+    {
+        return [];
+    }
+}
+
+#[\Tusk\Contracts\Attributes\Service(scope: 'request')]
+abstract class AbstractInputValidator implements CustomValidatorInterface {}
+
+#[\Tusk\Contracts\Attributes\Service(scope: 'worker')]
+final class WorkerScopedInputValidator implements CustomValidatorInterface
+{
+    public static int $instancesCreated = 0;
+
+    public function __construct()
+    {
+        self::$instancesCreated++;
+    }
+
     public function validate(object $value): iterable
     {
         return [];

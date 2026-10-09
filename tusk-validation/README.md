@@ -44,8 +44,10 @@ implement `CustomValidatorInterface` and register the validator for its DTO with
 `ApplicationBuilder::withValidator(RegisterUser::class, RegisterUserValidator::class)`.
 The framework resolves the validator through the application container when
 validation runs, preserving the service's configured container scope and
-constructor-injected dependencies. Custom validators receive the hydrated DTO;
-built-in constraints validate the converted constructor input values.
+constructor-injected dependencies. Request/prototype validators are
+instantiated on first use, so DI errors for those scopes surface when
+validation runs. Custom validators receive the hydrated DTO; built-in
+constraints validate the converted constructor input values.
 
 This package does not provide form requests, nested DTO hydration, enum/union
 conversion, arbitrary payload validation, or automatic database checks. HTTP
