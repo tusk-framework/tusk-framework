@@ -42,9 +42,10 @@ Rules that depend on domain policy or persistence belong in explicit custom
 validators, not in generic database-aware constraints. In a Tusk application,
 implement `CustomValidatorInterface` and register the validator for its DTO with
 `ApplicationBuilder::withValidator(RegisterUser::class, RegisterUserValidator::class)`.
-The framework resolves the validator through the application container, so it
-can use constructor-injected services. Custom validators receive the hydrated
-DTO; built-in constraints validate the converted constructor input values.
+The framework resolves the validator through the application container when
+validation runs, preserving the service's configured container scope and
+constructor-injected dependencies. Custom validators receive the hydrated DTO;
+built-in constraints validate the converted constructor input values.
 
 This package does not provide form requests, nested DTO hydration, enum/union
 conversion, arbitrary payload validation, or automatic database checks. HTTP

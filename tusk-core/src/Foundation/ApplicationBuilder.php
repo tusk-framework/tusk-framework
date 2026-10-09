@@ -285,7 +285,14 @@ class ApplicationBuilder
                 if (! $validator instanceof CustomValidatorInterface) {
                     throw new RuntimeException("Custom validator service {$validatorClass} for {$dtoClass} must implement ".CustomValidatorInterface::class.'.');
                 }
-                $registry->register($dtoClass, $validator);
+                $registry->registerFactory($dtoClass, static function () use ($container, $validatorClass, $dtoClass): CustomValidatorInterface {
+                    $resolved = $container->get($validatorClass);
+                    if (! $resolved instanceof CustomValidatorInterface) {
+                        throw new RuntimeException("Custom validator service {$validatorClass} for {$dtoClass} must implement ".CustomValidatorInterface::class.'.');
+                    }
+
+                    return $resolved;
+                });
             }
         }
     }

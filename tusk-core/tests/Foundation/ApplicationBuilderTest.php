@@ -640,6 +640,33 @@ PHP);
         self::assertSame([], $registry->for(InvalidInput::class));
     }
 
+    public function test_custom_validator_prototype_scope_is_resolved_for_each_validation(): void
+    {
+        $application = Application::configure($this->basePath)
+            ->withValidator(ValidInput::class, PrototypeInputValidator::class)
+            ->create();
+        $registry = $application->container()->get(CustomValidatorRegistry::class);
+
+        self::assertNotSame(
+            $registry->for(ValidInput::class)[0],
+            $registry->for(ValidInput::class)[0],
+        );
+    }
+
+    public function test_custom_validator_request_scope_uses_a_fresh_instance_after_scope_reset(): void
+    {
+        $application = Application::configure($this->basePath)
+            ->withValidator(ValidInput::class, RequestScopedInputValidator::class)
+            ->create();
+        $registry = $application->container()->get(CustomValidatorRegistry::class);
+        $container = $application->container();
+        $first = $registry->for(ValidInput::class)[0];
+
+        $container->resetScope('request');
+
+        self::assertNotSame($first, $registry->for(ValidInput::class)[0]);
+    }
+
     public function test_duplicate_custom_validator_registration_is_rejected(): void
     {
         $builder = Application::configure($this->basePath)->withValidator(ValidInput::class, SecondInputValidator::class);
@@ -718,6 +745,24 @@ final class InjectedInputValidator implements CustomValidatorInterface
 }
 
 final class SecondInputValidator implements CustomValidatorInterface
+{
+    public function validate(object $value): iterable
+    {
+        return [];
+    }
+}
+
+#[\Tusk\Contracts\Attributes\Service(scope: 'prototype')]
+final class PrototypeInputValidator implements CustomValidatorInterface
+{
+    public function validate(object $value): iterable
+    {
+        return [];
+    }
+}
+
+#[\Tusk\Contracts\Attributes\Service(scope: 'request')]
+final class RequestScopedInputValidator implements CustomValidatorInterface
 {
     public function validate(object $value): iterable
     {
