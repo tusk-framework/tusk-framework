@@ -281,7 +281,11 @@ class ApplicationBuilder
                 if (! $container->has($validatorClass)) {
                     $container->register($validatorClass, 'singleton');
                 }
-                $scope = $container->export()['scopes'][$validatorClass] ?? null;
+                $containerState = $container->export();
+                if (array_filter($containerState['hooks'][$validatorClass] ?? []) !== []) {
+                    throw new RuntimeException("Custom validator {$validatorClass} for {$dtoClass} must not declare lifecycle hooks; inject a dedicated lifecycle-managed service instead.");
+                }
+                $scope = $containerState['scopes'][$validatorClass] ?? null;
                 if (! in_array($scope, ['request', 'prototype'], true)) {
                     try {
                         $validator = $container->get($validatorClass);

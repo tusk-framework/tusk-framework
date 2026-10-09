@@ -666,6 +666,11 @@ PHP);
         $registry = $application->container()->get(CustomValidatorRegistry::class);
         $container = $application->container();
         self::assertSame(0, RequestScopedInputValidator::$instancesCreated);
+
+        $container->runLifecycleHooks('application.start');
+        $container->runLifecycleHooks('worker.start');
+
+        self::assertSame(0, RequestScopedInputValidator::$instancesCreated);
         $first = $registry->for(ValidInput::class)[0];
         self::assertSame(1, RequestScopedInputValidator::$instancesCreated);
 
@@ -715,6 +720,15 @@ PHP);
         $this->expectExceptionMessage(AbstractInputValidator::class);
         Application::configure($this->basePath)
             ->withValidator(ValidInput::class, AbstractInputValidator::class)
+            ->create();
+    }
+
+    public function test_custom_validator_with_lifecycle_hooks_fails_during_create(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('must not declare lifecycle hooks');
+        Application::configure($this->basePath)
+            ->withValidator(ValidInput::class, HookedRequestScopedInputValidator::class)
             ->create();
     }
 }
@@ -820,6 +834,18 @@ final class RequestScopedInputValidator implements CustomValidatorInterface
 
 #[\Tusk\Contracts\Attributes\Service(scope: 'request')]
 abstract class AbstractInputValidator implements CustomValidatorInterface {}
+
+#[\Tusk\Contracts\Attributes\Service(scope: 'request')]
+final class HookedRequestScopedInputValidator implements CustomValidatorInterface
+{
+    #[\Tusk\Contracts\Attributes\OnWorkerStart]
+    public function startWorker(): void {}
+
+    public function validate(object $value): iterable
+    {
+        return [];
+    }
+}
 
 #[\Tusk\Contracts\Attributes\Service(scope: 'worker')]
 final class WorkerScopedInputValidator implements CustomValidatorInterface

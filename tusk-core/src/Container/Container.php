@@ -227,6 +227,11 @@ class Container implements ContainerInterface
         $seen = [];
 
         foreach ($this->hooks as $serviceClass => $events) {
+            $methods = $events[$event] ?? [];
+            if ($methods === []) {
+                continue;
+            }
+
             $instance = $this->get($serviceClass);
             $id = spl_object_id($instance);
             if (isset($seen[$id])) {
@@ -234,7 +239,7 @@ class Container implements ContainerInterface
             }
             $seen[$id] = true;
 
-            foreach ($events[$event] ?? [] as $methodName) {
+            foreach ($methods as $methodName) {
                 try {
                     $instance->{$methodName}();
                 } catch (\Throwable $exception) {
