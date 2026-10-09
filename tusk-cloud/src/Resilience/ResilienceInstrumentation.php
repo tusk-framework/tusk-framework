@@ -6,6 +6,8 @@ namespace Tusk\Cloud\Resilience;
 
 use InvalidArgumentException;
 use Throwable;
+use Tusk\Cloud\Resilience\Diagnostics\EngineResilienceReporter;
+use Tusk\Cloud\Resilience\Diagnostics\ResilienceDiagnosticsRegistry;
 use Tusk\Cloud\Resilience\Event\CircuitStateChanged;
 use Tusk\Cloud\Resilience\Event\FallbackApplied;
 use Tusk\Cloud\Resilience\Event\OperationRejected;
@@ -20,6 +22,8 @@ final class ResilienceInstrumentation
         private readonly ?EventDispatcherInterface $eventDispatcher = null,
         private readonly ?TelemetryProviderInterface $telemetry = null,
         private readonly ?ClockInterface $clock = null,
+        private readonly ?ResilienceDiagnosticsRegistry $registry = null,
+        private readonly ?EngineResilienceReporter $reporter = null,
     ) {}
 
     public function retryScheduled(RetryScheduled $event): void
@@ -39,9 +43,13 @@ final class ResilienceInstrumentation
         $this->increment('tusk.resilience.rejections', ['reason' => $event->reason->value]);
     }
 
-    public function circuitStateChanged(CircuitStateChanged $event): void
+    public function circuitStateChanged(CircuitStateChanged $event, ?string $circuitName = null): void
     {
         $this->dispatch($event);
+        $circuitName ??= $event->operation;
+        if ($this->registry?->recordCircuitState($circuitName, strtolower($event->current->value))) {
+            $this->reporter?->reportTransition();
+        }
         $this->increment('tusk.resilience.circuit.transitions', [
             'from' => $event->previous->value,
             'to' => $event->current->value,

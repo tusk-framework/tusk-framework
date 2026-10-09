@@ -7,6 +7,7 @@ namespace Tusk\Runtime\Modules;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Contracts\Observability\TelemetryProviderInterface;
 use Tusk\Contracts\Observability\WorkerDiagnosticsInterface;
+use Tusk\Contracts\Observability\WorkerLifecycleCheckpointInterface;
 use Tusk\Contracts\Runtime\Modules\RuntimeModuleInterface;
 use Tusk\Runtime\Observability\ObservabilityConfiguration;
 use Tusk\Runtime\Observability\ObservabilityProviderFactory;
@@ -33,7 +34,9 @@ final class RuntimeObservabilityModule implements RuntimeModuleInterface
         $container->instance(TelemetryProviderInterface::class, $provider);
         $container->instance(WorkerDiagnosticsInterface::class, $collector);
         $container->instance(WorkerDiagnosticsCollector::class, $collector);
-        $container->instance(RuntimeObservability::class, new RuntimeObservability($provider, $collector));
+        $checkpoint = $container->has(WorkerLifecycleCheckpointInterface::class)
+            ? $container->get(WorkerLifecycleCheckpointInterface::class) : null;
+        $container->instance(RuntimeObservability::class, new RuntimeObservability($provider, $collector, checkpoint: $checkpoint));
     }
 
     public function start(): void {}

@@ -12,7 +12,11 @@ use RuntimeException;
 use Throwable;
 use Tusk\Contracts\Observability\SpanInterface;
 use Tusk\Contracts\Observability\TelemetryProviderInterface;
+use Tusk\Contracts\Observability\WorkerLifecycleCheckpointInterface;
+use Tusk\Core\Container\Container;
+use Tusk\Runtime\Modules\RuntimeObservabilityModule;
 use Tusk\Runtime\Observability\DiagnosticsClockInterface;
+use Tusk\Runtime\Observability\ObservabilityConfiguration;
 use Tusk\Runtime\Observability\RuntimeObservability;
 use Tusk\Runtime\Observability\WorkerDiagnosticsCollector;
 
@@ -42,7 +46,7 @@ final class RuntimeObservabilityTest extends TestCase
         $clock = new RuntimeObservabilityClock;
         $collector = new WorkerDiagnosticsCollector($clock);
         $provider = new RecordingTelemetryProvider;
-        $observability = new RuntimeObservability($provider, $collector, $clock, 'roadrunner', 'worker-1');
+        $observability = new RuntimeObservability($provider, $collector, $clock, workerId: 'worker-1', runtime: 'roadrunner');
 
         $observability->applicationStarted();
         $observability->workerStarted();
@@ -68,12 +72,23 @@ final class RuntimeObservabilityTest extends TestCase
         self::assertSame(1, $collector->snapshot()->jobsTotal);
     }
 
+    public function test_fourth_positional_argument_remains_the_worker_id(): void
+    {
+        $collector = new WorkerDiagnosticsCollector;
+        $observability = new RuntimeObservability(new RecordingTelemetryProvider, $collector, new RuntimeObservabilityClock, 'worker-1');
+
+        $observability->workerStarted();
+
+        self::assertSame('worker-1', $collector->snapshot()->workerId);
+        self::assertSame('unknown', $collector->snapshot()->runtime);
+    }
+
     public function test_request_failure_is_recorded_without_replacing_the_original_exception(): void
     {
         $clock = new RuntimeObservabilityClock;
         $collector = new WorkerDiagnosticsCollector($clock);
         $provider = new RecordingTelemetryProvider;
-        $observability = new RuntimeObservability($provider, $collector, $clock, 'roadrunner', 'worker-1');
+        $observability = new RuntimeObservability($provider, $collector, $clock, workerId: 'worker-1', runtime: 'roadrunner');
         $observability->applicationStarted();
         $observability->workerStarted();
         $observability->requestStarted(new ServerRequest('POST', '/orders'));
@@ -90,7 +105,7 @@ final class RuntimeObservabilityTest extends TestCase
     {
         $clock = new RuntimeObservabilityClock;
         $collector = new WorkerDiagnosticsCollector($clock);
-        $observability = new RuntimeObservability(new FailingBoundaryTelemetryProvider, $collector, $clock, 'roadrunner', 'worker-1');
+        $observability = new RuntimeObservability(new FailingBoundaryTelemetryProvider, $collector, $clock, workerId: 'worker-1', runtime: 'roadrunner');
 
         $observability->applicationStarted();
         $observability->workerStarted();
@@ -99,6 +114,56 @@ final class RuntimeObservabilityTest extends TestCase
 
         self::assertSame('application.stopped', $collector->snapshot()->lifecycleState);
         self::assertSame(2, $collector->snapshot()->telemetryFailures);
+    }
+
+    public function test_optional_checkpoint_receives_worker_and_completed_operation_boundaries(): void
+    {
+        $checkpoint = new RecordingLifecycleCheckpoint;
+        $container = new Container;
+        $container->instance(WorkerLifecycleCheckpointInterface::class, $checkpoint);
+        (new RuntimeObservabilityModule(ObservabilityConfiguration::fromArray([])))->register($container);
+        $observability = $container->get(RuntimeObservability::class);
+
+        $observability->workerStarted();
+        $observability->requestStarted();
+        $observability->requestFinished();
+        $observability->jobStarted('mail');
+        $observability->jobFinished(true);
+        $observability->workerStopped();
+
+        self::assertSame(['worker_started', 'request_finished', 'job_finished', 'worker_stopped'], $checkpoint->boundaries);
+    }
+
+    public function test_checkpoint_failure_cannot_change_lifecycle_result(): void
+    {
+        $checkpoint = new RecordingLifecycleCheckpoint;
+        $checkpoint->fail = true;
+        $observability = new RuntimeObservability(new RecordingTelemetryProvider, new WorkerDiagnosticsCollector, checkpoint: $checkpoint);
+
+        $observability->workerStarted();
+        $observability->requestStarted();
+        $observability->requestFinished(new Response(200));
+        $observability->jobStarted('mail');
+        $observability->jobFinished(true);
+        $observability->workerStopped();
+
+        self::assertSame(['worker_started', 'request_finished', 'job_finished', 'worker_stopped'], $checkpoint->boundaries);
+    }
+}
+
+final class RecordingLifecycleCheckpoint implements WorkerLifecycleCheckpointInterface
+{
+    /** @var list<string> */
+    public array $boundaries = [];
+
+    public bool $fail = false;
+
+    public function checkpoint(string $boundary): void
+    {
+        $this->boundaries[] = $boundary;
+        if ($this->fail) {
+            throw new RuntimeException('checkpoint failed');
+        }
     }
 }
 

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tusk\Cloud\Resilience;
 
+use Tusk\Cloud\Resilience\Diagnostics\EngineResilienceReporter;
+use Tusk\Cloud\Resilience\Diagnostics\ResilienceDiagnosticsRegistry;
 use Tusk\Contracts\Cloud\Resilience\ClockInterface;
 use Tusk\Contracts\Cloud\Resilience\OperationContext;
 use Tusk\Contracts\Cloud\Resilience\StateStoreInterface;
@@ -23,8 +25,10 @@ final class ResiliencePipelineFactory
         private readonly StateStoreInterface $stateStore,
         ?EventDispatcherInterface $eventDispatcher = null,
         ?TelemetryProviderInterface $telemetry = null,
+        ?ResilienceDiagnosticsRegistry $registry = null,
+        ?EngineResilienceReporter $reporter = null,
     ) {
-        $this->instrumentation = new ResilienceInstrumentation($eventDispatcher, $telemetry, $clock);
+        $this->instrumentation = new ResilienceInstrumentation($eventDispatcher, $telemetry, $clock, $registry, $reporter);
     }
 
     public function pipeline(string $name): ResiliencePipelineBuilder

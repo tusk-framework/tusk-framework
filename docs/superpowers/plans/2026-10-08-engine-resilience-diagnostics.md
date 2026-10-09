@@ -99,11 +99,11 @@
 - [ ] **Step 8: Write failing application-container tests** proving `ResilienceRuntime` is bound from validated active-profile config and direct factory APIs remain unchanged.
 - [ ] **Step 9: Bind the worker-local runtime** in `ApplicationBuilder` after validation and before providers/routes are loaded; preserve existing providers and runtime module ordering.
 - [ ] **Step 10: Run** focused PHPUnit, full `php vendor/phpunit/phpunit/phpunit --testdox`, Pint on touched files, PHPStan, `composer validate --strict`, and `git diff --check`.
-- [ ] **Step 11: Open Framework PR** only after Engine's receiver contract is merged; update from `origin/main` and port the tested changes to a fresh feature branch if the existing branch's base moved.
+- [ ] **Step 11: Open Framework PR** after the Engine receiver contract is implemented and its contract tests pass; mark it as dependent on the Engine PR. Do not merge Framework until Engine's receiver contract is merged. Update from `origin/main` and port the tested changes to a fresh feature branch if the existing branch's base moved.
 
 ### Task 3: Real cross-repository RoadRunner verification in the lab
 
-**Repository:** `tusk-engine-lab`
+**Workspace:** local disposable `tusk-engine-lab` harness (this checkout has no Git remote; it is not a publishable repository).
 
 **Files:**
 - Modify: `scripts/run-all.ps1` and `scripts/run-all.sh` — add a resilience diagnostics stage to both supported entry points.
@@ -122,16 +122,16 @@
 - [ ] **Step 4: Exercise worker restart and lease expiry**; assert the old observation becomes unknown and a new worker's state does not inherit the old one.
 - [ ] **Step 5: Run the focused stage** in local-source mode on this host; retain failure artifacts only when the stage fails.
 - [ ] **Step 6: Run all lab stages** in PowerShell and Git Bash where available; report platform-specific skips instead of claiming unrun checks.
-- [ ] **Step 7: Open a separate lab PR** after Engine and Framework implementation PRs are available; link both implementation PRs and keep it focused on the integration harness. Run it against those PR commits before merge, then rerun against merged `main` commits for final evidence.
+- [ ] **Step 7: Preserve lab-only changes in the local harness**; record exact commands, commits, and outcomes as evidence in both Engine and Framework PRs. Run against implementation PR commits before merge, then rerun against merged `main` commits for final evidence. Do not invent a remote or lab PR for this disposable checkout.
 
 ### Task 4: Merge, reconcile tracking, and final verification
 
 - [ ] **Step 1: Review Engine PR and all checks**; fix failures on its branch and merge only when checks are green.
 - [ ] **Step 2: Synchronize Framework `main` from `origin/main`**, verify clean baseline, then rebase/port the Framework feature and resolve any dependency changes safely.
 - [ ] **Step 3: Re-run Framework full suite and CI-equivalent checks** after the Engine contract merge; update and merge the Framework PR only when green.
-- [ ] **Step 4: Run the cross-repository lab** against the merged Engine and Framework mains and record exact results in the lab PR.
-- [ ] **Step 5: Merge the lab PR** when its tests and review are green.
-- [ ] **Step 6: Update and close Framework issue #10** with Engine, Framework, and lab PR links only after every acceptance criterion has evidence; leave declarative work in #11/#12 open.
+- [ ] **Step 4: Run the cross-repository lab** against the merged Engine and Framework mains and record exact commands, commit SHAs, and results in both implementation PRs.
+- [ ] **Step 5: Confirm** both implementation PRs contain the final passing integration evidence and all required CI checks are green; no lab PR is applicable.
+- [ ] **Step 6: Update and close Framework issue #10** with Engine and Framework PR links plus local lab evidence only after every acceptance criterion has evidence; leave declarative work in #11/#12 open.
 
 ## Final verification and handoff
 

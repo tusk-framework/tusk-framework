@@ -8,8 +8,15 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Tusk\Cloud\Health\HealthCheckRegistry;
 use Tusk\Cloud\Resilience\Configuration\ResilienceConfiguration;
+use Tusk\Cloud\Resilience\Diagnostics\EngineResilienceReporter;
+use Tusk\Cloud\Resilience\Diagnostics\ResilienceDiagnosticsRegistry;
+use Tusk\Cloud\Resilience\Diagnostics\ResilienceRuntime;
+use Tusk\Cloud\Resilience\InMemoryStateStore;
+use Tusk\Cloud\Resilience\ResiliencePipelineFactory;
+use Tusk\Cloud\Resilience\Testing\FakeClock;
 use Tusk\Config\Repository;
 use Tusk\Contracts\Observability\TelemetryProviderInterface;
+use Tusk\Contracts\Observability\WorkerLifecycleCheckpointInterface;
 use Tusk\Foundation\Application;
 use Tusk\Runtime\Jobs\JobHandlerRegistry;
 use Tusk\Runtime\Observability\RuntimeObservability;
@@ -94,6 +101,40 @@ PHP);
         $application = Application::configure($this->basePath)->create();
 
         self::assertSame(3, $application->container()->get(ResilienceConfiguration::class)->policy('payments')?->retry()['max_attempts']);
+    }
+
+    public function test_binds_one_runtime_with_effective_profile_before_providers_and_runtime_modules(): void
+    {
+        file_put_contents($this->basePath.'/config/resilience.php', <<<'PHP'
+<?php
+return [
+    'policies' => ['payments' => ['retry' => ['max_attempts' => 2]]],
+    'profiles' => ['testing' => ['policies' => ['payments' => ['bulkhead' => ['max_concurrent' => 2]]]]],
+];
+PHP);
+        file_put_contents($this->basePath.'/bootstrap/providers.php', '<?php return static function ($container): void { $container->instance("provider.runtime", $container->get(\\Tusk\\Cloud\\Resilience\\Diagnostics\\ResilienceRuntime::class)); };');
+        $previous = getenv('APP_ENV');
+        putenv('APP_ENV=testing');
+        try {
+            $application = Application::configure($this->basePath)->withProviders(['bootstrap/providers.php'])->create();
+        } finally {
+            $previous === false ? putenv('APP_ENV') : putenv('APP_ENV='.$previous);
+        }
+
+        $container = $application->container();
+        $runtime = $container->get(ResilienceRuntime::class);
+        self::assertSame($runtime, $container->get('provider.runtime'));
+        self::assertSame($container->get(ResilienceDiagnosticsRegistry::class), $container->get(ResilienceDiagnosticsRegistry::class));
+        self::assertSame($container->get(EngineResilienceReporter::class), $container->get(WorkerLifecycleCheckpointInterface::class));
+        $runtime->pipeline('payments');
+        self::assertSame([['name' => 'payments', 'features' => ['retry', 'bulkhead']]], $runtime->diagnostics()->policies());
+    }
+
+    public function test_direct_factory_still_executes_without_engine_registration(): void
+    {
+        $factory = new ResiliencePipelineFactory(new FakeClock, new InMemoryStateStore);
+
+        self::assertSame('direct', $factory->pipeline('legacy')->run(static fn (): string => 'direct'));
     }
 
     public function test_registers_local_resilience_readiness_after_configuration_validation(): void
