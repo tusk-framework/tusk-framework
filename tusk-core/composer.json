@@ -5,6 +5,8 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "tusk/cloud": "self.version",
+        "tusk/config": "self.version",
         "tusk/contracts": "self.version"
     },
     "autoload": {

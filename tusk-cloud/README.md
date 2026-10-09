@@ -7,6 +7,53 @@ The **Tusk Cloud** is a toolkit for building distributed systems and cloud-nativ
 - **Service Discovery**: Integration with Consul and Kubernetes.
 - **Observability**: Health checks and metrics publishing.
 
+### Declarative named configuration
+
+New projects include `config/resilience.php`. Define only the mechanisms a named operation needs; omitted sections remain disabled:
+
+```php
+<?php
+
+return [
+    'policies' => [
+        'catalog.fetch' => [
+            'retry' => [
+                'max_attempts' => 3,
+                'backoff' => [
+                    'type' => 'exponential',
+                    'base_delay_ms' => 100,
+                    'max_delay_ms' => 2_000,
+                ],
+                'retry_on' => [\RuntimeException::class],
+            ],
+            'circuit_breaker' => ['failure_threshold' => 5],
+            'bulkhead' => ['max_concurrent' => 16],
+            'rate_limit' => ['capacity' => 100, 'refill_per_second' => 20],
+        ],
+    ],
+    'profiles' => [
+        'production' => [
+            'policies' => [
+                'catalog.fetch' => ['retry' => ['max_attempts' => 4]],
+            ],
+        ],
+    ],
+];
+```
+
+At boot, Tusk validates the base policy and the active `APP_ENV` profile (`production` when unset) before constructing runtime modules, then exposes the immutable `ResilienceConfiguration` from the application container. The optional `profiles` map may be omitted. Profiles recursively merge associative maps; lists and scalar values replace the base value. Unknown keys, invalid bounds, and class names that do not implement `Throwable` fail with a configuration path and do not echo the supplied value.
+
+Run the same local validation without starting the application or RoadRunner:
+
+```bash
+php bin/tusk config:validate
+php bin/tusk config:validate --profile=staging
+```
+
+Retry remains one attempt by default and unsafe operations remain non-retryable unless `allow_unsafe_retries` is explicitly enabled. `retry_on` is an optional allow-list, `do_not_retry_on` is an optional deny-list that takes precedence, and omitting the allow-list preserves the existing default classifier. Keep retries limited to failures and operations that are safe to repeat.
+
+The readiness endpoint includes the local `resilience_configuration` check, which is registered only after successful boot validation and makes no network calls. Liveness remains an unconditional local `UP` response and does not execute readiness checks. In a persistent worker, keep configured pipelines reusable but create an `OperationContext` for each logical request/operation; its cancellation, deadline, and metadata are not retained by the shared configuration.
+
 ### Programmatic resilience
 
 Resilience policies can be composed around a closure without attributes or runtime reflection. Each pipeline owns worker-local bulkhead and rate-limit state, so construct it once during application bootstrap and reuse it; creating multiple pipelines creates independent budgets. Retry is one attempt by default, and the default failure classifier is terminal.
@@ -136,7 +183,7 @@ $http = new Psr18ResilientClient(
 $response = $http->sendRequest($request);
 ```
 
-The retry classifier is explicit; the HTTP integration classifies transient statuses and network failures. Configure connection and request timeouts on the injected HTTP client: PSR-18 has no standard API for interrupting an in-flight request. Operation deadlines and cancellation are checked before dispatch and between attempts, not by forcibly stopping the transport. A context factory can supply a deadline/cancellation token and veto retries. Optional events and metrics configured on `$resilience` also cover this client, without HTTP-specific labels or duplicate accounting. Framework configuration and boot validation, health/readiness, and trace-header propagation remain follow-up phases of [issue #29](https://github.com/tusk-framework/tusk-framework/issues/29); the issue remains open.
+The retry classifier is explicit; the HTTP integration classifies transient statuses and network failures. Configure connection and request timeouts on the injected HTTP client: PSR-18 has no standard API for interrupting an in-flight request. Operation deadlines and cancellation are checked before dispatch and between attempts, not by forcibly stopping the transport. A context factory can supply a deadline/cancellation token and veto retries. Optional events and metrics configured on `$resilience` also cover this client, without HTTP-specific labels or duplicate accounting. Declarative policy configuration, boot validation, and local readiness are documented above; trace-header propagation remains a follow-up tracked by [issue #29](https://github.com/tusk-framework/tusk-framework/issues/29).
 
 ## Installation
 ```bash
