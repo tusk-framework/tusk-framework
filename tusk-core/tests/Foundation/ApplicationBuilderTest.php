@@ -23,6 +23,10 @@ use Tusk\Runtime\Observability\RuntimeObservability;
 use Tusk\Runtime\RuntimeConfiguration;
 use Tusk\Web\HttpKernel;
 use Tusk\Web\Router\Router;
+use Tusk\Validation\Constraint\NotBlank;
+use Tusk\Validation\CustomValidatorInterface;
+use Tusk\Validation\CustomValidatorRegistry;
+use Tusk\Validation\Metadata\ValidationMetadataRegistry;
 
 class ApplicationBuilderTest extends TestCase
 {
@@ -528,6 +532,96 @@ PHP);
             rmdir($this->basePath.'/app');
         }
     }
+
+    public function test_explicit_route_metadata_is_compiled_and_sealed_before_create_returns(): void
+    {
+        file_put_contents($this->basePath.'/routes/web.php', <<<'PHP'
+<?php
+return static function (\Tusk\Web\Router\Router $router): void {
+    $router->addRoute(['POST'], '/input', [\Tusk\Core\Tests\Foundation\ValidationController::class, 'submit']);
+};
+PHP);
+
+        $application = Application::configure($this->basePath)->withRouting(web: 'routes/web.php')->create();
+        $registry = $application->container()->get(ValidationMetadataRegistry::class);
+        self::assertSame(['name'], $registry->metadataFor(ValidInput::class)->fields());
+        $this->expectException(\LogicException::class);
+        $registry->register('LateDto', $registry->metadataFor(ValidInput::class));
+    }
+
+    public function test_invalid_explicit_route_dto_metadata_aborts_create(): void
+    {
+        file_put_contents($this->basePath.'/routes/web.php', <<<'PHP'
+<?php
+return static function (\Tusk\Web\Router\Router $router): void {
+    $router->addRoute(['POST'], '/invalid', [\Tusk\Core\Tests\Foundation\ValidationController::class, 'invalid']);
+};
+PHP);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('string');
+        Application::configure($this->basePath)->withRouting(web: 'routes/web.php')->create();
+    }
+
+    public function test_invalid_discovered_route_dto_metadata_aborts_create(): void
+    {
+        mkdir($this->basePath.'/app/Controller', 0777, true);
+        file_put_contents($this->basePath.'/app/Controller/Invalid.php', <<<'PHP'
+<?php
+namespace TuskBuilderInvalidMetadata;
+#[\Tusk\Web\Attribute\Controller('/invalid')]
+final class Invalid
+{
+    #[\Tusk\Web\Attribute\Post]
+    public function submit(\Tusk\Core\Tests\Foundation\InvalidInput $input): void {}
+}
+PHP);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('string');
+        Application::configure($this->basePath)->create();
+    }
+
+    public function test_custom_validators_resolve_in_order_with_provider_dependencies_and_only_for_their_dto(): void
+    {
+        file_put_contents($this->basePath.'/bootstrap/providers.php', <<<'PHP'
+<?php
+return static function (\Tusk\Core\Container\Container $container): void {
+    $container->instance(\Tusk\Core\Tests\Foundation\ValidationService::class, new \Tusk\Core\Tests\Foundation\ValidationService());
+};
+PHP);
+
+        $application = Application::configure($this->basePath)
+            ->withProviders(['bootstrap/providers.php'])
+            ->withValidator(ValidInput::class, InjectedInputValidator::class)
+            ->withValidator(ValidInput::class, SecondInputValidator::class)
+            ->create();
+        $registry = $application->container()->get(CustomValidatorRegistry::class);
+
+        self::assertSame([InjectedInputValidator::class, SecondInputValidator::class], array_map(
+            static fn (CustomValidatorInterface $validator): string => $validator::class,
+            $registry->for(ValidInput::class),
+        ));
+        self::assertSame('available', $registry->for(ValidInput::class)[0]->service->value);
+        self::assertSame([], $registry->for(InvalidInput::class));
+    }
+
+    public function test_duplicate_custom_validator_registration_is_rejected(): void
+    {
+        $builder = Application::configure($this->basePath)->withValidator(ValidInput::class, SecondInputValidator::class);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('already registered');
+        $builder->withValidator(ValidInput::class, SecondInputValidator::class);
+    }
+
+    public function test_invalid_custom_validator_fails_during_create_with_class_context(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage(BootstrapController::class);
+        Application::configure($this->basePath)
+            ->withValidator(ValidInput::class, BootstrapController::class)
+            ->create();
+    }
 }
 
 class BootstrapController
@@ -535,5 +629,50 @@ class BootstrapController
     public function hello(): string
     {
         return 'hello from Tusk';
+    }
+}
+
+final readonly class ValidInput
+{
+    public function __construct(#[NotBlank] public string $name) {}
+}
+
+final readonly class InvalidInput
+{
+    public function __construct(#[NotBlank] public int $count) {}
+}
+
+final class ValidationController
+{
+    public function submit(ValidInput $input): void {}
+
+    public function invalid(InvalidInput $input): void {}
+}
+
+final readonly class ValidationService
+{
+    public string $value;
+
+    public function __construct()
+    {
+        $this->value = 'available';
+    }
+}
+
+final class InjectedInputValidator implements CustomValidatorInterface
+{
+    public function __construct(public ValidationService $service) {}
+
+    public function validate(object $value): iterable
+    {
+        return [];
+    }
+}
+
+final class SecondInputValidator implements CustomValidatorInterface
+{
+    public function validate(object $value): iterable
+    {
+        return [];
     }
 }

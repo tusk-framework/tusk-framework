@@ -51,6 +51,31 @@ class Router implements RouterInterface
         return isset($this->routes[strtoupper($method)][$path]);
     }
 
+    /** @return list<array{controller: class-string, method: non-empty-string}> */
+    public function controllerActions(): array
+    {
+        $actions = [];
+        $seen = [];
+        foreach ($this->routes as $routes) {
+            foreach ($routes as $route) {
+                $handler = $route['handler'];
+                if (! is_array($handler) || count($handler) !== 2
+                    || ! is_string($handler[0]) || ! is_string($handler[1]) || $handler[1] === '') {
+                    continue;
+                }
+
+                $key = $handler[0].'::'.$handler[1];
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $actions[] = ['controller' => $handler[0], 'method' => $handler[1]];
+            }
+        }
+
+        return $actions;
+    }
+
     public function match(string $method, string $uri): ?RouteMatch
     {
         $method = strtoupper($method);

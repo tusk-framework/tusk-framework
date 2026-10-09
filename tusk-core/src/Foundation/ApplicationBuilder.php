@@ -3,8 +3,11 @@
 namespace Tusk\Foundation;
 
 use FilesystemIterator;
+use Psr\Http\Message\ServerRequestInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
+use ReflectionMethod;
+use ReflectionNamedType;
 use RuntimeException;
 use Tusk\Cloud\Health\HealthCheckRegistry;
 use Tusk\Cloud\Health\ResilienceConfigurationHealthCheck;
@@ -28,9 +31,14 @@ use Tusk\Runtime\RuntimeConfiguration;
 use Tusk\Runtime\RuntimeModuleFactory;
 use Tusk\Web\Attribute\Controller;
 use Tusk\Web\Attribute\Route;
+use Tusk\Web\Http\Request;
 use Tusk\Web\HttpKernel;
 use Tusk\Web\Router\Router;
 use Tusk\Web\Router\RouterInterface;
+use Tusk\Validation\CustomValidatorInterface;
+use Tusk\Validation\CustomValidatorRegistry;
+use Tusk\Validation\Metadata\ValidationMetadataCompiler;
+use Tusk\Validation\Metadata\ValidationMetadataRegistry;
 
 class ApplicationBuilder
 {
@@ -45,6 +53,9 @@ class ApplicationBuilder
 
     /** @var list<string> */
     private array $controllers = ['app/Controller'];
+
+    /** @var array<string, list<class-string<CustomValidatorInterface>>> */
+    private array $validators = [];
 
     public function __construct(private string $basePath) {}
 
@@ -90,6 +101,16 @@ class ApplicationBuilder
         return $this;
     }
 
+    public function withValidator(string $dtoClass, string $validatorClass): self
+    {
+        if (in_array($validatorClass, $this->validators[$dtoClass] ?? [], true)) {
+            throw new \InvalidArgumentException("Validator {$validatorClass} is already registered for {$dtoClass}.");
+        }
+        $this->validators[$dtoClass][] = $validatorClass;
+
+        return $this;
+    }
+
     public function create(): Application
     {
         $values = $this->loadConfig();
@@ -109,6 +130,8 @@ class ApplicationBuilder
         $healthChecks->register(new ResilienceConfigurationHealthCheck);
 
         $container = new Container;
+        $metadataRegistry = new ValidationMetadataRegistry;
+        $customValidatorRegistry = new CustomValidatorRegistry;
         $container->instance(ResilienceDiagnosticsRegistry::class, $diagnosticsRegistry);
         $container->instance(EngineResilienceReporter::class, $resilienceReporter);
         $container->instance(WorkerLifecycleCheckpointInterface::class, $resilienceReporter);
@@ -160,6 +183,8 @@ class ApplicationBuilder
             ResilienceConfiguration::class => $resilience,
             HealthCheckRegistry::class => $healthChecks,
             HttpKernel::class => $kernel,
+            ValidationMetadataRegistry::class => $metadataRegistry,
+            CustomValidatorRegistry::class => $customValidatorRegistry,
             Application::class => $application,
             ApplicationInterface::class => $application,
         ] as $id => $instance) {
@@ -203,7 +228,60 @@ class ApplicationBuilder
 
         $this->registerDiscoveredRoutes($router, $controllerClasses);
 
+        $this->compileRouteMetadata($router, $container, $metadataRegistry);
+        $this->registerValidators($container, $customValidatorRegistry);
+        $metadataRegistry->seal();
+        $customValidatorRegistry->seal();
+
         return $application;
+    }
+
+    private function compileRouteMetadata(Router $router, Container $container, ValidationMetadataRegistry $registry): void
+    {
+        $compiler = new ValidationMetadataCompiler;
+        $compiled = [];
+        foreach ($router->controllerActions() as $action) {
+            $method = new ReflectionMethod($action['controller'], $action['method']);
+            foreach ($method->getParameters() as $parameter) {
+                $type = $parameter->getType();
+                if (! $type instanceof ReflectionNamedType || $type->isBuiltin()) {
+                    continue;
+                }
+                $class = $type->getName();
+                if ($class === Request::class || is_a($class, ServerRequestInterface::class, true)
+                    || $container->has($class) || isset($compiled[$class])) {
+                    continue;
+                }
+                $registry->register($class, $compiler->compile($class));
+                $compiled[$class] = true;
+            }
+        }
+    }
+
+    private function registerValidators(Container $container, CustomValidatorRegistry $registry): void
+    {
+        foreach ($this->validators as $dtoClass => $validatorClasses) {
+            if (! class_exists($dtoClass)) {
+                throw new RuntimeException("Custom validator DTO class does not exist: {$dtoClass}.");
+            }
+            foreach ($validatorClasses as $validatorClass) {
+                if (! class_exists($validatorClass) || ! is_subclass_of($validatorClass, CustomValidatorInterface::class)) {
+                    throw new RuntimeException("Custom validator {$validatorClass} for {$dtoClass} must implement ".CustomValidatorInterface::class.'.');
+                }
+                if (! $container->has($validatorClass)) {
+                    $container->register($validatorClass, 'singleton');
+                }
+                try {
+                    $validator = $container->get($validatorClass);
+                } catch (\Throwable $exception) {
+                    throw new RuntimeException("Unable to resolve custom validator {$validatorClass} for {$dtoClass}: {$exception->getMessage()}", 0, $exception);
+                }
+                if (! $validator instanceof CustomValidatorInterface) {
+                    throw new RuntimeException("Custom validator service {$validatorClass} for {$dtoClass} must implement ".CustomValidatorInterface::class.'.');
+                }
+                $registry->register($dtoClass, $validator);
+            }
+        }
     }
 
     /** @param list<string> $directories
