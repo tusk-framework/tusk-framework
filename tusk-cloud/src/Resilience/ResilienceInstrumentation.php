@@ -47,19 +47,8 @@ final class ResilienceInstrumentation
     {
         $this->dispatch($event);
         $circuitName ??= $event->operation;
-        if ($this->registry?->contains($circuitName)) {
-            try {
-                $snapshot = $this->registry->snapshot();
-                foreach ($snapshot->circuits() as $circuit) {
-                    if ($circuit['name'] === $circuitName && $circuit['state'] === strtolower($event->current->value)) {
-                        $this->reporter?->reportTransition();
-
-                        break;
-                    }
-                }
-            } catch (Throwable) {
-                // A failed diagnostic read or report cannot affect the policy.
-            }
+        if ($this->registry?->recordCircuitState($circuitName, strtolower($event->current->value))) {
+            $this->reporter?->reportTransition();
         }
         $this->increment('tusk.resilience.circuit.transitions', [
             'from' => $event->previous->value,

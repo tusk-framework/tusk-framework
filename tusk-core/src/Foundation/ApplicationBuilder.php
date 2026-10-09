@@ -86,7 +86,7 @@ class ApplicationBuilder
         $profile = is_string($profile) && trim($profile) !== '' ? $profile : 'production';
         $resilience = ResilienceConfigurationLoader::load($resilienceValues, $profile);
         $stateStore = new InMemoryStateStore;
-        $diagnosticsRegistry = new ResilienceDiagnosticsRegistry($stateStore);
+        $diagnosticsRegistry = new ResilienceDiagnosticsRegistry;
         $resilienceReporter = EngineResilienceReporter::fromEnvironment($diagnosticsRegistry);
         $resilienceFactory = new ResiliencePipelineFactory(new SystemClock, $stateStore, registry: $diagnosticsRegistry, reporter: $resilienceReporter);
         $resilienceRuntime = new ResilienceRuntime($resilience, $resilienceFactory, $diagnosticsRegistry);

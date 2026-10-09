@@ -4,18 +4,17 @@ declare(strict_types=1);
 
 namespace Tusk\Cloud\Resilience\Diagnostics;
 
-use Throwable;
 use Tusk\Cloud\Resilience\Configuration\ResiliencePolicyConfiguration;
-use Tusk\Contracts\Cloud\Resilience\StateStoreInterface;
 
 final class ResilienceDiagnosticsRegistry
 {
     /** @var array<string, list<string>> */
     private array $policies = [];
 
-    private bool $reportable = true;
+    /** @var array<string, string> */
+    private array $circuitStates = [];
 
-    public function __construct(private readonly StateStoreInterface $store) {}
+    private bool $reportable = true;
 
     public function register(ResiliencePolicyConfiguration $policy): void
     {
@@ -33,11 +32,22 @@ final class ResilienceDiagnosticsRegistry
             }
         }
         $this->policies[$name] = $features;
+        if (in_array('circuit_breaker', $features, true)) {
+            $this->circuitStates[$name] ??= 'unknown';
+        } else {
+            unset($this->circuitStates[$name]);
+        }
     }
 
-    public function contains(string $name): bool
+    public function recordCircuitState(string $name, string $state): bool
     {
-        return isset($this->policies[$name]);
+        if (! isset($this->circuitStates[$name]) || ! in_array($state, ['closed', 'open', 'half_open', 'unknown'], true)) {
+            return false;
+        }
+
+        $this->circuitStates[$name] = $state;
+
+        return true;
     }
 
     public function snapshot(): ResilienceDiagnosticsSnapshot
@@ -52,18 +62,9 @@ final class ResilienceDiagnosticsRegistry
         $circuits = [];
         foreach ($policies as $name => $features) {
             $policyEntries[] = ['name' => $name, 'features' => $features];
-            if (! in_array('circuit_breaker', $features, true)) {
-                continue;
+            if (isset($this->circuitStates[$name])) {
+                $circuits[] = ['name' => $name, 'state' => $this->circuitStates[$name]];
             }
-
-            $state = 'unknown';
-            try {
-                $stored = $this->store->get('cb:'.$name);
-                $state = self::confirmedState($stored) ?? 'unknown';
-            } catch (Throwable) {
-                // Diagnostics cannot affect the operation or claim an unconfirmed state.
-            }
-            $circuits[] = ['name' => $name, 'state' => $state];
         }
 
         return new ResilienceDiagnosticsSnapshot($policyEntries, $circuits);
@@ -72,34 +73,5 @@ final class ResilienceDiagnosticsRegistry
     private static function validName(string $name): bool
     {
         return strlen($name) <= 128 && preg_match('/\A[A-Za-z0-9_.-]+\z/D', $name) === 1;
-    }
-
-    /** @param array<string, mixed>|null $stored */
-    private static function confirmedState(?array $stored): ?string
-    {
-        if ($stored === null
-            || ! isset($stored['state'], $stored['failureCount'], $stored['halfOpenProbeCount'], $stored['halfOpenGeneration'])
-            || ! array_key_exists('openedAtMilliseconds', $stored)
-            || ! is_string($stored['state'])
-            || ! in_array($stored['state'], ['CLOSED', 'OPEN', 'HALF_OPEN'], true)
-            || ! is_int($stored['failureCount']) || $stored['failureCount'] < 0
-            || ! is_int($stored['halfOpenProbeCount']) || $stored['halfOpenProbeCount'] < 0
-            || ! is_string($stored['halfOpenGeneration'])
-            || preg_match('/\A[0-9a-f]{32}:(0|[1-9][0-9]*)\z/D', $stored['halfOpenGeneration'], $matches) !== 1
-            || filter_var($matches[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false
-        ) {
-            return null;
-        }
-
-        if ($stored['state'] === 'CLOSED') {
-            return $stored['openedAtMilliseconds'] === null && $stored['halfOpenProbeCount'] === 0 ? 'closed' : null;
-        }
-
-        if (! is_int($stored['openedAtMilliseconds']) || $stored['openedAtMilliseconds'] < 0
-            || $stored['state'] === 'OPEN' && $stored['halfOpenProbeCount'] !== 0) {
-            return null;
-        }
-
-        return $stored['state'] === 'OPEN' ? 'open' : 'half_open';
     }
 }

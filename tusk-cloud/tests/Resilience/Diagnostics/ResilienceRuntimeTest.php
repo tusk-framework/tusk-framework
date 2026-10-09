@@ -28,7 +28,7 @@ final class ResilienceRuntimeTest extends TestCase
             ]]]],
         ], 'testing');
         $store = new InMemoryStateStore;
-        $registry = new ResilienceDiagnosticsRegistry($store);
+        $registry = new ResilienceDiagnosticsRegistry;
         $runtime = new ResilienceRuntime($configuration, new ResiliencePipelineFactory(new FakeClock, $store, registry: $registry), $registry);
 
         self::assertSame([], $runtime->diagnostics()->policies());
@@ -44,13 +44,13 @@ final class ResilienceRuntimeTest extends TestCase
         }
     }
 
-    public function test_snapshot_is_detached_and_confirmed_store_state_changes_are_visible(): void
+    public function test_snapshot_is_detached_and_worker_observed_transitions_are_visible(): void
     {
         $configuration = ResilienceConfigurationLoader::load(['policies' => [
             'payments' => ['circuit_breaker' => ['failure_threshold' => 1]],
         ]]);
         $store = new InMemoryStateStore;
-        $registry = new ResilienceDiagnosticsRegistry($store);
+        $registry = new ResilienceDiagnosticsRegistry;
         $runtime = new ResilienceRuntime($configuration, new ResiliencePipelineFactory(new FakeClock, $store, registry: $registry), $registry);
         $pipeline = $runtime->pipeline('payments');
         $before = $runtime->diagnostics();
@@ -73,7 +73,7 @@ final class ResilienceRuntimeTest extends TestCase
             'secret/path' => ['retry' => ['max_attempts' => 1]],
         ]]);
         $store = new InMemoryStateStore;
-        $registry = new ResilienceDiagnosticsRegistry($store);
+        $registry = new ResilienceDiagnosticsRegistry;
         $runtime = new ResilienceRuntime($configuration, new ResiliencePipelineFactory(new FakeClock, $store, registry: $registry), $registry);
 
         self::assertSame('ok', $runtime->pipeline('secret/path')->run(static fn (): string => 'ok'));
@@ -87,7 +87,7 @@ final class ResilienceRuntimeTest extends TestCase
             'payments' => ['retry' => ['max_attempts' => 3, 'retry_on' => [RuntimeException::class]]],
         ]]);
         $store = new InMemoryStateStore;
-        $registry = new ResilienceDiagnosticsRegistry($store);
+        $registry = new ResilienceDiagnosticsRegistry;
         $runtime = new ResilienceRuntime($configuration, new ResiliencePipelineFactory(new FakeClock, $store, registry: $registry), $registry);
         $runtime->pipeline('payments');
 
@@ -100,7 +100,7 @@ final class ResilienceRuntimeTest extends TestCase
             'payments' => ['circuit_breaker' => ['failure_threshold' => 1]],
         ]]);
         $store = new InMemoryStateStore;
-        $registry = new ResilienceDiagnosticsRegistry($store);
+        $registry = new ResilienceDiagnosticsRegistry;
         $payloads = [];
         $reporter = new EngineResilienceReporter($registry, 'http://127.0.0.1:8765', 'token', static function (string $url, string $token, string $body) use (&$payloads): never {
             $payloads[] = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
@@ -125,7 +125,7 @@ final class ResilienceRuntimeTest extends TestCase
             'payments' => ['circuit_breaker' => ['failure_threshold' => 1]],
         ]]);
         $store = new InMemoryStateStore;
-        $registry = new ResilienceDiagnosticsRegistry($store);
+        $registry = new ResilienceDiagnosticsRegistry;
         $payloads = [];
         $reporter = new EngineResilienceReporter($registry, 'http://127.0.0.1:8765', 'token', static function (string $url, string $token, string $body) use (&$payloads): void {
             $payloads[] = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
@@ -141,11 +141,11 @@ final class ResilienceRuntimeTest extends TestCase
         }
     }
 
-    public function test_corrupt_store_entry_is_unknown_until_a_valid_state_is_confirmed(): void
+    public function test_existing_store_state_remains_unknown_until_observed_by_this_worker(): void
     {
         $configuration = ResilienceConfigurationLoader::load(['policies' => ['payments' => ['circuit_breaker' => []]]]);
         $store = new InMemoryStateStore;
-        $registry = new ResilienceDiagnosticsRegistry($store);
+        $registry = new ResilienceDiagnosticsRegistry;
         $runtime = new ResilienceRuntime($configuration, new ResiliencePipelineFactory(new FakeClock, $store, registry: $registry), $registry);
         $runtime->pipeline('payments');
         $store->set('cb:payments', ['state' => 'OPEN']);

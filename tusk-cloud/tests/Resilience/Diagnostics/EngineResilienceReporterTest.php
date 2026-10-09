@@ -10,10 +10,24 @@ use RuntimeException;
 use Tusk\Cloud\Resilience\Configuration\ResilienceConfigurationLoader;
 use Tusk\Cloud\Resilience\Diagnostics\EngineResilienceReporter;
 use Tusk\Cloud\Resilience\Diagnostics\ResilienceDiagnosticsRegistry;
-use Tusk\Cloud\Resilience\InMemoryStateStore;
 
 final class EngineResilienceReporterTest extends TestCase
 {
+    public function test_report_snapshot_uses_cached_worker_circuit_state(): void
+    {
+        $registry = new ResilienceDiagnosticsRegistry;
+        $registry->register(ResilienceConfigurationLoader::load([
+            'policies' => ['payments' => ['circuit_breaker' => []]],
+        ])->policy('payments'));
+
+        self::assertSame([['name' => 'payments', 'state' => 'unknown']], $registry->snapshot()->circuits());
+
+        self::assertTrue($registry->recordCircuitState('payments', 'open'));
+        self::assertSame([['name' => 'payments', 'state' => 'open']], $registry->snapshot()->circuits());
+        self::assertFalse($registry->recordCircuitState('missing', 'open'));
+        self::assertFalse($registry->recordCircuitState('payments', 'unsafe'));
+    }
+
     public function test_missing_partial_and_non_loopback_configuration_make_no_attempt(): void
     {
         $attempts = [];
@@ -27,7 +41,7 @@ final class EngineResilienceReporterTest extends TestCase
             ['http://127.0.0.1:8080?x=1', 'token'], ['http://user@127.0.0.1:8080', 'token'],
             ['http://127.0.0.1:8080', "token\r\nInjected: true"],
         ] as [$url, $token]) {
-            (new EngineResilienceReporter(new ResilienceDiagnosticsRegistry(new InMemoryStateStore), $url, $token, Closure::fromCallable($send)))->checkpoint('worker_started');
+            (new EngineResilienceReporter(new ResilienceDiagnosticsRegistry, $url, $token, Closure::fromCallable($send)))->checkpoint('worker_started');
         }
 
         self::assertSame([], $attempts);
@@ -70,7 +84,7 @@ final class EngineResilienceReporterTest extends TestCase
         $timeouts = [];
         $now = 0;
         $reporter = new EngineResilienceReporter(
-            new ResilienceDiagnosticsRegistry(new InMemoryStateStore),
+            new ResilienceDiagnosticsRegistry,
             'http://127.0.0.1:8765',
             'token',
             static function (string $url, string $token, string $payload, float $timeout) use (&$timeouts): void {
@@ -122,7 +136,7 @@ PHP;
             self::assertGreaterThan(0, $port);
 
             $reporter = new EngineResilienceReporter(
-                new ResilienceDiagnosticsRegistry(new InMemoryStateStore),
+                new ResilienceDiagnosticsRegistry,
                 'http://127.0.0.1:'.$port,
                 'token',
             );
@@ -131,7 +145,7 @@ PHP;
             $reporter->checkpoint('worker_started');
 
             $elapsedMilliseconds = (hrtime(true) - $startedAt) / 1_000_000;
-            self::assertLessThan(500.0, $elapsedMilliseconds);
+            self::assertLessThan(100.0, $elapsedMilliseconds);
         } finally {
             proc_terminate($process);
             fclose($pipes[1]);
@@ -145,7 +159,7 @@ PHP;
         $now = 0;
         $attempts = 0;
         $reporter = new EngineResilienceReporter(
-            new ResilienceDiagnosticsRegistry(new InMemoryStateStore),
+            new ResilienceDiagnosticsRegistry,
             'http://127.0.0.1:8765',
             'token',
             static function () use (&$attempts): void {
@@ -200,11 +214,11 @@ PHP;
         try {
             putenv('TUSK_ENGINE_RESILIENCE_DIAGNOSTICS_URL=http://127.0.0.1:8765');
             putenv('TUSK_ENGINE_RESILIENCE_DIAGNOSTICS_TOKEN');
-            EngineResilienceReporter::fromEnvironment(new ResilienceDiagnosticsRegistry(new InMemoryStateStore), Closure::fromCallable($transport))->checkpoint('worker_started');
+            EngineResilienceReporter::fromEnvironment(new ResilienceDiagnosticsRegistry, Closure::fromCallable($transport))->checkpoint('worker_started');
             self::assertSame(0, $attempts);
 
             putenv('TUSK_ENGINE_RESILIENCE_DIAGNOSTICS_TOKEN=token');
-            EngineResilienceReporter::fromEnvironment(new ResilienceDiagnosticsRegistry(new InMemoryStateStore), Closure::fromCallable($transport))->checkpoint('worker_started');
+            EngineResilienceReporter::fromEnvironment(new ResilienceDiagnosticsRegistry, Closure::fromCallable($transport))->checkpoint('worker_started');
             self::assertSame(1, $attempts);
         } finally {
             $oldUrl === false ? putenv('TUSK_ENGINE_RESILIENCE_DIAGNOSTICS_URL') : putenv('TUSK_ENGINE_RESILIENCE_DIAGNOSTICS_URL='.$oldUrl);
@@ -214,7 +228,7 @@ PHP;
 
     public function test_oversized_snapshot_and_entry_count_are_not_published(): void
     {
-        $registry = new ResilienceDiagnosticsRegistry(new InMemoryStateStore);
+        $registry = new ResilienceDiagnosticsRegistry;
         for ($i = 0; $i < 256; $i++) {
             $name = str_pad('p'.$i, 128, 'x');
             $registry->register(ResilienceConfigurationLoader::load(['policies' => [$name => ['circuit_breaker' => []]]])->policy($name));
@@ -233,7 +247,7 @@ PHP;
     /** @param array<string, array<string, mixed>> $sections */
     private function registryWithPolicy(string $name, array $sections): ResilienceDiagnosticsRegistry
     {
-        $registry = new ResilienceDiagnosticsRegistry(new InMemoryStateStore);
+        $registry = new ResilienceDiagnosticsRegistry;
         $registry->register(ResilienceConfigurationLoader::load(['policies' => [$name => $sections]])->policy($name));
 
         return $registry;
