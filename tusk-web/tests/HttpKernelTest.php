@@ -60,6 +60,25 @@ class HttpKernelTest extends TestCase
         self::assertSame(200, $valid->getStatusCode());
         self::assertSame(['name' => 'Ada'], json_decode((string) $valid->getBody(), true, flags: JSON_THROW_ON_ERROR));
     }
+
+    public function test_validation_problem_is_returned_when_accept_requests_problem_json(): void
+    {
+        $metadata = new ValidationMetadataRegistry;
+        $metadata->register(KernelInput::class, (new ValidationMetadataCompiler)->compile(KernelInput::class));
+        $metadata->seal();
+        $custom = new CustomValidatorRegistry;
+        $custom->seal();
+        $binder = new ArgumentBinder(new Validator(new ConstraintValidator), $metadata, $custom);
+        $kernel = new HttpKernel(new TestContainer([KernelInputController::class => new KernelInputController]), new TestRouter(KernelInputController::class, 'create'), $binder);
+
+        $response = $kernel->handle((new ServerRequest('POST', '/hello'))
+            ->withParsedBody(['name' => 'Ada', 'email' => 'invalid'])
+            ->withHeader('Accept', 'application/problem+json'));
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertSame('application/problem+json', $response->getHeaderLine('Content-Type'));
+        self::assertSame('urn:tusk:problem:validation', json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR)['type']);
+    }
     protected function tearDown(): void
     {
         unset($_ENV['APP_DEBUG'], $_SERVER['APP_DEBUG']);

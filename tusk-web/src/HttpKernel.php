@@ -121,7 +121,8 @@ class HttpKernel implements RequestHandlerInterface
             $debug = self::isDebugEnabled();
             $headers = ['X-Request-Id' => $requestId];
 
-            if (str_contains(strtolower($request->getHeaderLine('Accept')), 'application/json')) {
+            $accept = strtolower($request->getHeaderLine('Accept'));
+            if (str_contains($accept, 'application/json') || str_contains($accept, 'application/problem+json')) {
                 $validationError = $e instanceof ValidationException;
                 $payload = [
                     'type' => $validationError ? 'urn:tusk:problem:validation' : 'about:blank',
