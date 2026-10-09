@@ -13,8 +13,8 @@ final class Validator implements ValidatorInterface
     public function validate(
         object $value,
         ValidationMetadata $metadata,
+        array $constructorValues,
         iterable $customValidators = [],
-        array $constructorValues = [],
     ): ValidationResult
     {
         $violations = $this->constraintValidator->validate($metadata, $constructorValues);

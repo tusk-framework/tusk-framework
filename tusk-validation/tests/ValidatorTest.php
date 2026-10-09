@@ -3,6 +3,7 @@
 namespace Tusk\Validation\Tests;
 
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use Tusk\Validation\ConstraintValidator;
 use Tusk\Validation\Metadata\ValidationMetadataCompiler;
 use Tusk\Validation\ValidationResult;
@@ -11,6 +12,18 @@ use Tusk\Validation\Violation;
 
 final class ValidatorTest extends TestCase
 {
+    public function test_constructor_values_are_required_by_validator_contract(): void
+    {
+        foreach ([\Tusk\Validation\ValidatorInterface::class, Validator::class] as $class) {
+            $parameters = [];
+            foreach ((new ReflectionMethod($class, 'validate'))->getParameters() as $parameter) {
+                $parameters[$parameter->getName()] = $parameter;
+            }
+            self::assertArrayHasKey('constructorValues', $parameters);
+            self::assertFalse($parameters['constructorValues']->isOptional(), sprintf('%s::validate() must require constructor values.', $class));
+        }
+    }
+
     public function test_aggregates_builtin_violations_in_field_and_attribute_order(): void
     {
         $metadata = (new ValidationMetadataCompiler)->compile(ValidatedInput::class);
@@ -53,8 +66,8 @@ final class ValidatorTest extends TestCase
         $withCustom = (new Validator(new ConstraintValidator))->validate(
             $valid,
             $metadata,
-            [$custom],
             ['name' => 'Ada', 'email' => 'ada@example.test'],
+            [$custom],
         );
         self::assertSame('custom.rule', $withCustom->violations()[0]->code());
     }
