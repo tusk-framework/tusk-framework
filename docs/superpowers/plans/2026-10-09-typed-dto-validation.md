@@ -79,15 +79,15 @@
 
 **Interfaces:**
 - `ApplicationBuilder::withValidator(string $dtoClass, string $validatorClass): self` registers a custom validator for exactly one DTO class.
-- Concrete `Router::controllerActions(): list<array{controller: class-string, method: non-empty-string}>` exposes a stable, de-duplicated list of class/method handlers for preparation-time inspection; callable closures remain outside typed DTO auto-binding. Do not add a method to `RouterInterface`, which would break custom router implementations.
+- Concrete `Router::controllerActions(): list<array{controller: class-string, method: non-empty-string}>` exposes a de-duplicated list of class/method handlers in route-registration order for preparation-time inspection. Callable handlers that are not class/method handlers (including closures) are omitted from DTO metadata discovery; changing their invocation behavior is outside this task. Do not add a method to `RouterInterface`, which would break custom router implementations.
 - `ValidationMetadataRegistry::register(string $dtoClass, ValidationMetadata $metadata): void`, `metadataFor(string $dtoClass): ValidationMetadata`, and `seal(): void` provide a boot-populated, immutable-at-request-time metadata registry.
 - `CustomValidatorRegistry::for(string $dtoClass): list<CustomValidatorInterface>` returns only validators explicitly associated with that DTO.
 - Application preparation compiles metadata for every routed class-typed controller parameter that is not the Tusk request wrapper, a PSR server request, or a container-bound service; this includes explicit controller routes and discovered attributed controllers. Invalid metadata aborts `create()` before returning an application.
-- Registered custom validators are resolved from the application container during preparation and aggregated with built-in validation; arbitrary class names from request data are never resolved.
+- Registered custom validators are resolved from the application container during preparation and grouped by DTO; Task 3 injects the matching list so `Validator` aggregates them with built-in validation at request time. Arbitrary class names from request data are never resolved.
 
-- [ ] **Step 1: Add failing router tests** proving explicit array/class-method handlers and discovered handlers can be enumerated without changing route matching.
+- [ ] **Step 1: Add failing router tests** proving explicit array/class-method handlers and discovered handlers can be enumerated in registration order without changing route matching.
 - [ ] **Step 2: Add failing builder tests** proving custom validator registration and invalid DTO metadata fail during `create()` before an HTTP request is handled.
-- [ ] **Step 3: Implement route-handler enumeration and preparation-time metadata compilation** while keeping closure routes supported as explicit low-level handlers.
+- [ ] **Step 3: Implement route-handler enumeration and preparation-time metadata compilation**; omit non-class/method callables from metadata discovery without changing their existing invocation behavior.
 - [ ] **Step 4: Implement custom-validator registration and container resolution** using constructor injection; reject invalid/non-validator registrations with actionable boot errors.
 - [ ] **Step 5: Test duplicate registration, invalid validator classes, ordering, and a validator depending on a container service.**
 - [ ] **Step 6: Run focused router, builder, and validation registry tests** and verify all pass.
@@ -106,6 +106,7 @@
 
 **Interfaces:**
 - `ArgumentBinder` receives a `ValidatorInterface`, sealed `ValidationMetadataRegistry`, and `CustomValidatorRegistry`; it passes the hydrated DTO plus a transient map of converted/defaulted constructor argument values. The map is kept only for the current binding call.
+- The binder passes `CustomValidatorRegistry::for($dtoClass)` to `ValidatorInterface::validate()` so registered custom validators execute with built-in constraints for only their mapped DTO.
 - Constructor hydration and scalar conversion remain unchanged; after constructing a typed DTO, the binder validates it and throws a typed validation failure containing only safe violations.
 - `HttpKernel` keeps `type`, `title`, `status`, `instance`, and `request_id`; validation adds `type: "urn:tusk:problem:validation"`, `title: "Validation Failed"`, `errors: array<string, list<array{code: string, message: string}>>`, and status 422.
 - Debug mode must not expose values, stack traces, or internal validator exceptions for validation failures. Non-validation exception debug behavior remains unchanged.
