@@ -91,8 +91,12 @@ class HttpKernelTest extends TestCase
         $problem = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
 
         $this->assertSame(422, $response->getStatusCode());
+        $this->assertSame('about:blank', $problem['type']);
         $this->assertSame('Missing request field: name', $problem['title']);
         $this->assertSame(422, $problem['status']);
+        $this->assertSame('/hello', $problem['instance']);
+        $this->assertSame($response->getHeaderLine('X-Request-Id'), $problem['request_id']);
+        $this->assertSame('application/problem+json', $response->getHeaderLine('Content-Type'));
         $this->assertArrayNotHasKey('exception', $problem);
         $this->assertArrayNotHasKey('message', $problem);
         $this->assertArrayNotHasKey('file', $problem);
@@ -161,6 +165,8 @@ class HttpKernelTest extends TestCase
 
         $this->assertSame(500, $response->getStatusCode());
         $this->assertSame('application/problem+json', $response->getHeaderLine('Content-Type'));
+        $this->assertSame('/hello', $problem['instance']);
+        $this->assertSame($response->getHeaderLine('X-Request-Id'), $problem['request_id']);
         $this->assertSame('Internal Server Error', $problem['title']);
         $this->assertArrayNotHasKey('exception', $problem);
         $this->assertArrayNotHasKey('message', $problem);
