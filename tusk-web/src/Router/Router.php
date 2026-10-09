@@ -11,6 +11,8 @@ class Router implements RouterInterface
 {
     private array $routes = [];
 
+    private int $routeSequence = 0;
+
     /**
      * Scans a list of controller classes and registers their routes.
      *
@@ -42,6 +44,7 @@ class Router implements RouterInterface
             $this->routes[strtoupper($method)][$path] = [
                 'handler' => $handler,
                 'middleware' => $middleware,
+                'sequence' => ++$this->routeSequence,
             ];
         }
     }
@@ -56,21 +59,27 @@ class Router implements RouterInterface
     {
         $actions = [];
         $seen = [];
+        $registeredRoutes = [];
         foreach ($this->routes as $routes) {
             foreach ($routes as $route) {
-                $handler = $route['handler'];
-                if (! is_array($handler) || count($handler) !== 2
-                    || ! is_string($handler[0]) || ! is_string($handler[1]) || $handler[1] === '') {
-                    continue;
-                }
-
-                $key = $handler[0].'::'.$handler[1];
-                if (isset($seen[$key])) {
-                    continue;
-                }
-                $seen[$key] = true;
-                $actions[] = ['controller' => $handler[0], 'method' => $handler[1]];
+                $registeredRoutes[] = $route;
             }
+        }
+        usort($registeredRoutes, static fn (array $left, array $right): int => $left['sequence'] <=> $right['sequence']);
+
+        foreach ($registeredRoutes as $route) {
+            $handler = $route['handler'];
+            if (! is_array($handler) || count($handler) !== 2
+                || ! is_string($handler[0]) || ! is_string($handler[1]) || $handler[1] === '') {
+                continue;
+            }
+
+            $key = $handler[0].'::'.$handler[1];
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $actions[] = ['controller' => $handler[0], 'method' => $handler[1]];
         }
 
         return $actions;
