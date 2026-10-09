@@ -11,9 +11,9 @@ use Tusk\Cloud\Resilience\Configuration\ResilienceConfiguration;
 use Tusk\Config\Repository;
 use Tusk\Contracts\Observability\TelemetryProviderInterface;
 use Tusk\Foundation\Application;
-use Tusk\Runtime\RuntimeConfiguration;
-use Tusk\Runtime\Observability\RuntimeObservability;
 use Tusk\Runtime\Jobs\JobHandlerRegistry;
+use Tusk\Runtime\Observability\RuntimeObservability;
+use Tusk\Runtime\RuntimeConfiguration;
 use Tusk\Web\HttpKernel;
 use Tusk\Web\Router\Router;
 
@@ -228,7 +228,7 @@ PHP);
         try {
             Application::configure($this->basePath)->withJobs('app/Jobs')->create();
             self::fail('Expected malformed runtime modules to be rejected.');
-        } catch (\InvalidArgumentException $exception) {
+        } catch (InvalidArgumentException $exception) {
             self::assertSame('The runtime modules configuration must be an array.', $exception->getMessage());
         } finally {
             unlink($this->basePath.'/config/runtime.php');

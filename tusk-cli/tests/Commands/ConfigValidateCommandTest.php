@@ -84,4 +84,14 @@ final class ConfigValidateCommandTest extends TestCase
         self::assertSame($before, scandir($this->basePath));
         self::assertDirectoryDoesNotExist($this->basePath.'/.tusk');
     }
+
+    public function test_validation_does_not_execute_other_project_config_files(): void
+    {
+        file_put_contents($this->basePath.'/config/resilience.php', '<?php return ["policies" => []];');
+        file_put_contents($this->basePath.'/config/runtime.php', '<?php file_put_contents(__DIR__."/executed", "yes"); return [];');
+        $tester = new CommandTester(new ConfigValidateCommand($this->basePath));
+
+        self::assertSame(0, $tester->execute([]));
+        self::assertFileDoesNotExist($this->basePath.'/config/executed');
+    }
 }

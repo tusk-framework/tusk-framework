@@ -33,8 +33,7 @@ final class ConfigValidateCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         try {
-            $values = ProjectConfigurationLoader::load($this->basePath);
-            $resilience = $values['resilience'] ?? [];
+            $resilience = ProjectConfigurationLoader::loadResilience($this->basePath);
 
             $profileOption = $input->getOption('profile');
             if ($profileOption === null) {

@@ -30,4 +30,25 @@ final class ProjectConfigurationLoader
 
         return $values;
     }
+
+    /** @return array<array-key, mixed> */
+    public static function loadResilience(string $basePath): array
+    {
+        $directory = realpath($basePath.'/config');
+        if ($directory === false || ! is_dir($directory)) {
+            return [];
+        }
+
+        $file = $directory.'/resilience.php';
+        if (! is_file($file) || is_link($file)) {
+            return [];
+        }
+
+        $value = require $file;
+        if (! is_array($value)) {
+            throw new RuntimeException("Config file must return an array: {$file}");
+        }
+
+        return $value;
+    }
 }
