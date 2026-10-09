@@ -2,8 +2,8 @@
 
 namespace Tusk\Web\Router;
 
-use ReflectionClass;
 use ReflectionAttribute;
+use ReflectionClass;
 use Tusk\Web\Attribute\Controller;
 use Tusk\Web\Attribute\Route;
 
@@ -40,10 +40,15 @@ class Router implements RouterInterface
     {
         foreach ($methods as $method) {
             $this->routes[strtoupper($method)][$path] = [
-                'handler'    => $handler,
+                'handler' => $handler,
                 'middleware' => $middleware,
             ];
         }
+    }
+
+    public function hasRoute(string $method, string $path): bool
+    {
+        return isset($this->routes[strtoupper($method)][$path]);
     }
 
     public function match(string $method, string $uri): ?RouteMatch
@@ -58,10 +63,11 @@ class Router implements RouterInterface
         // 2. Try pattern matching for routes with placeholders (e.g. /users/{id})
         foreach ($this->routes[$method] ?? [] as $path => $route) {
             $pattern = preg_replace('/\{([^}]+)\}/', '(?P<$1>[^/]+)', $path);
-            $pattern = '#^' . $pattern . '$#';
+            $pattern = '#^'.$pattern.'$#';
 
             if (preg_match($pattern, $uri, $matches)) {
                 $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+
                 return $this->buildMatch($route, $params);
             }
         }
@@ -92,8 +98,8 @@ class Router implements RouterInterface
 
     private function joinPaths(string $prefix, string $path): string
     {
-        $fullPath = trim($prefix, '/') . '/' . trim($path, '/');
-        $fullPath = '/' . trim($fullPath, '/');
+        $fullPath = trim($prefix, '/').'/'.trim($path, '/');
+        $fullPath = '/'.trim($fullPath, '/');
 
         return $fullPath === '/' || $fullPath === '/?' ? '/' : rtrim($fullPath, '/');
     }

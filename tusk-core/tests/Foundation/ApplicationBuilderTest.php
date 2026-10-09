@@ -38,13 +38,12 @@ class ApplicationBuilderTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['config/app.php', 'config/runtime.php', 'config/resilience.php', 'config/ignored.txt', 'routes/web.php', 'bootstrap/providers.php'] as $file) {
-            if (is_file($this->basePath.'/'.$file)) {
-                unlink($this->basePath.'/'.$file);
-            }
-        }
-        foreach (['config', 'routes', 'bootstrap'] as $directory) {
-            rmdir($this->basePath.'/'.$directory);
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($this->basePath, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($iterator as $entry) {
+            $entry->isDir() ? rmdir($entry->getPathname()) : unlink($entry->getPathname());
         }
         rmdir($this->basePath);
     }
@@ -199,6 +198,235 @@ PHP);
         $response = $application->handle(new ServerRequest('GET', '/hello'));
         self::assertSame(200, $response->getStatusCode());
         self::assertSame('hello from Tusk', (string) $response->getBody());
+    }
+
+    public function test_discovers_and_registers_attribute_controllers_during_boot(): void
+    {
+        mkdir($this->basePath.'/app/Controller', 0777, true);
+        file_put_contents($this->basePath.'/app/Controller/Discovered.php', <<<'PHP'
+<?php
+namespace TuskBuilderDiscovered;
+#[\Tusk\Web\Attribute\Controller('/discovered')]
+final class Discovered
+{
+    #[\Tusk\Web\Attribute\Get('/hello')]
+    public function hello(): string { return 'discovered'; }
+}
+PHP);
+        require $this->basePath.'/app/Controller/Discovered.php';
+
+        $application = Application::configure($this->basePath)->create();
+
+        $response = $application->handle(new ServerRequest('GET', '/discovered/hello'));
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame('discovered', (string) $response->getBody());
+        self::assertTrue($application->container()->has('TuskBuilderDiscovered\\Discovered'));
+    }
+
+    public function test_empty_controller_directory_and_explicit_routes_remain_supported(): void
+    {
+        mkdir($this->basePath.'/app/Controller', 0777, true);
+        file_put_contents($this->basePath.'/bootstrap/providers.php', '<?php return static function (\\Tusk\\Core\\Container\\Container $container): void { $container->instance(\\Tusk\\Core\\Tests\\Foundation\\BootstrapController::class, new \\Tusk\\Core\\Tests\\Foundation\\BootstrapController()); };');
+        file_put_contents($this->basePath.'/routes/web.php', '<?php return static function (\\Tusk\\Web\\Router\\Router $router): void { $router->addRoute(["GET"], "/explicit", [\\Tusk\\Core\\Tests\\Foundation\\BootstrapController::class, "hello"]); };');
+
+        $application = Application::configure($this->basePath)->withRouting(web: 'routes/web.php')->withProviders(['bootstrap/providers.php'])->create();
+
+        self::assertSame('hello from Tusk', (string) $application->handle(new ServerRequest('GET', '/explicit'))->getBody());
+        self::assertSame(404, $application->handle(new ServerRequest('GET', '/missing'))->getStatusCode());
+    }
+
+    public function test_configured_controller_directories_are_scanned_and_services_are_registered(): void
+    {
+        mkdir($this->basePath.'/custom/nested', 0777, true);
+        file_put_contents($this->basePath.'/custom/nested/Configured.php', <<<'PHP'
+<?php
+namespace TuskBuilderConfigured;
+#[\Tusk\Web\Attribute\Controller('/configured')]
+final class Configured
+{
+    #[\Tusk\Web\Attribute\Get]
+    public function index(): string { return 'configured'; }
+}
+PHP);
+        require $this->basePath.'/custom/nested/Configured.php';
+
+        $application = Application::configure($this->basePath)->withControllers('custom')->create();
+
+        self::assertSame('configured', (string) $application->handle(new ServerRequest('GET', '/configured'))->getBody());
+        self::assertTrue($application->container()->has('TuskBuilderConfigured\\Configured'));
+    }
+
+    public function test_discovered_controller_uses_constructor_injection_from_providers(): void
+    {
+        mkdir($this->basePath.'/app/Controller', 0777, true);
+        file_put_contents($this->basePath.'/app/Controller/Injected.php', <<<'PHP'
+<?php
+namespace TuskBuilderInjected;
+final class GreetingService
+{
+    public function message(): string { return 'injected greeting'; }
+}
+#[\Tusk\Web\Attribute\Controller('/injected')]
+final class Injected
+{
+    public function __construct(private GreetingService $greetings) {}
+    #[\Tusk\Web\Attribute\Get]
+    public function index(): string { return $this->greetings->message(); }
+}
+PHP);
+        require $this->basePath.'/app/Controller/Injected.php';
+        file_put_contents($this->basePath.'/bootstrap/providers.php', <<<'PHP'
+<?php
+return static function (\Tusk\Core\Container\Container $container): void {
+    $container->instance(\TuskBuilderInjected\GreetingService::class, new \TuskBuilderInjected\GreetingService());
+};
+PHP);
+
+        $application = Application::configure($this->basePath)->withProviders(['bootstrap/providers.php'])->create();
+
+        self::assertSame('injected greeting', (string) $application->handle(new ServerRequest('GET', '/injected'))->getBody());
+    }
+
+    public function test_discovered_controller_preserves_prototype_service_scope(): void
+    {
+        mkdir($this->basePath.'/app/Controller', 0777, true);
+        file_put_contents($this->basePath.'/app/Controller/Prototype.php', <<<'PHP'
+<?php
+namespace TuskBuilderPrototype;
+#[\Tusk\Contracts\Attributes\Service(scope: 'prototype')]
+#[\Tusk\Web\Attribute\Controller('/prototype')]
+final class Prototype
+{
+    private int $requests = 0;
+    #[\Tusk\Web\Attribute\Get]
+    public function index(): string { return (string) ++$this->requests; }
+}
+PHP);
+        require $this->basePath.'/app/Controller/Prototype.php';
+
+        $application = Application::configure($this->basePath)->create();
+
+        $first = $application->handle(new ServerRequest('GET', '/prototype'));
+        $second = $application->handle(new ServerRequest('GET', '/prototype'));
+
+        self::assertSame('1', (string) $first->getBody());
+        self::assertSame('1', (string) $second->getBody());
+    }
+
+    public function test_discovered_route_collision_with_explicit_route_fails_at_boot(): void
+    {
+        mkdir($this->basePath.'/app/Controller', 0777, true);
+        file_put_contents($this->basePath.'/app/Controller/Collision.php', <<<'PHP'
+<?php
+namespace TuskBuilderCollision;
+#[\Tusk\Web\Attribute\Controller]
+final class Collision
+{
+    #[\Tusk\Web\Attribute\Get('/collision')]
+    public function index(): string { return 'attribute'; }
+}
+PHP);
+        require $this->basePath.'/app/Controller/Collision.php';
+        file_put_contents($this->basePath.'/routes/web.php', <<<'PHP'
+<?php
+return static function (\Tusk\Web\Router\Router $router): void {
+    $router->addRoute(['GET'], '/collision', static fn (): string => 'explicit');
+};
+PHP);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Duplicate controller route GET /collision');
+        Application::configure($this->basePath)->withRouting(web: 'routes/web.php')->create();
+    }
+
+    public function test_discovered_controller_binds_route_scalar_and_flat_readonly_dto(): void
+    {
+        mkdir($this->basePath.'/app/Controller', 0777, true);
+        file_put_contents($this->basePath.'/app/Controller/Typed.php', <<<'PHP'
+<?php
+namespace TuskBuilderTyped;
+final readonly class Input
+{
+    public function __construct(public string $name) {}
+}
+#[\Tusk\Web\Attribute\Controller('/typed')]
+final class Typed
+{
+    #[\Tusk\Web\Attribute\Get('/{id}')]
+    public function show(int $id, Input $input): array { return ['id' => $id, 'name' => $input->name]; }
+}
+PHP);
+        require $this->basePath.'/app/Controller/Typed.php';
+
+        $application = Application::configure($this->basePath)->create();
+        $request = (new ServerRequest('GET', '/typed/42'))->withParsedBody(['name' => 'Tusk']);
+        $response = $application->handle($request);
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame(['id' => 42, 'name' => 'Tusk'], json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR));
+    }
+
+    public function test_discovery_handles_multiple_classes_and_anonymous_classes(): void
+    {
+        mkdir($this->basePath.'/app/Controller', 0777, true);
+        file_put_contents($this->basePath.'/app/Controller/Multiple.php', <<<'PHP'
+<?php
+namespace TuskBuilderMultiple;
+$anonymous = new class {};
+#[\Tusk\Web\Attribute\Controller('/multiple')]
+final class First
+{
+    #[\Tusk\Web\Attribute\Get('/first')]
+    public function first(): string { return 'first'; }
+}
+#[\Tusk\Web\Attribute\Controller('/multiple')]
+final class Second
+{
+    #[\Tusk\Web\Attribute\Get('/second')]
+    public function second(): string { return 'second'; }
+}
+PHP);
+        require $this->basePath.'/app/Controller/Multiple.php';
+
+        $application = Application::configure($this->basePath)->create();
+
+        self::assertSame('first', (string) $application->handle(new ServerRequest('GET', '/multiple/first'))->getBody());
+        self::assertSame('second', (string) $application->handle(new ServerRequest('GET', '/multiple/second'))->getBody());
+    }
+
+    public function test_controller_discovery_ignores_symlinked_php_files(): void
+    {
+        mkdir($this->basePath.'/app/Controller', 0777, true);
+        file_put_contents($this->basePath.'/OutsideController.php', <<<'PHP'
+<?php
+namespace TuskBuilderSymlink;
+#[\Tusk\Web\Attribute\Controller('/outside')]
+final class OutsideController
+{
+    #[\Tusk\Web\Attribute\Get]
+    public function index(): string { return 'outside'; }
+}
+PHP);
+        if (! @symlink($this->basePath.'/OutsideController.php', $this->basePath.'/app/Controller/LinkedController.php')) {
+            self::markTestSkipped('The current Windows environment does not permit creating file symlinks.');
+        }
+
+        $application = Application::configure($this->basePath)->create();
+
+        self::assertSame(404, $application->handle(new ServerRequest('GET', '/outside'))->getStatusCode());
+    }
+
+    public function test_duplicate_discovered_routes_fail_with_a_boot_diagnostic(): void
+    {
+        mkdir($this->basePath.'/app/Controller', 0777, true);
+        foreach (['First', 'Second'] as $class) {
+            file_put_contents($this->basePath.'/app/Controller/'.$class.'.php', '<?php namespace TuskBuilderDuplicate; #[\\Tusk\\Web\\Attribute\\Controller] final class '.$class.' { #[\\Tusk\\Web\\Attribute\\Get("/same")] public function index(): string { return "'.$class.'"; } }');
+            require $this->basePath.'/app/Controller/'.$class.'.php';
+        }
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('/same');
+        Application::configure($this->basePath)->create();
     }
 
     public function test_missing_route_file_fails_at_create(): void

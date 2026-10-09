@@ -2,6 +2,9 @@
 
 namespace Tusk\Foundation;
 
+use FilesystemIterator;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use RuntimeException;
 use Tusk\Cloud\Health\HealthCheckRegistry;
 use Tusk\Cloud\Health\ResilienceConfigurationHealthCheck;
@@ -23,6 +26,8 @@ use Tusk\Runtime\Jobs\JobHandlerRegistry;
 use Tusk\Runtime\Jobs\JobHandlerScanner;
 use Tusk\Runtime\RuntimeConfiguration;
 use Tusk\Runtime\RuntimeModuleFactory;
+use Tusk\Web\Attribute\Controller;
+use Tusk\Web\Attribute\Route;
 use Tusk\Web\HttpKernel;
 use Tusk\Web\Router\Router;
 use Tusk\Web\Router\RouterInterface;
@@ -37,6 +42,9 @@ class ApplicationBuilder
 
     /** @var list<string> */
     private array $jobs = [];
+
+    /** @var list<string> */
+    private array $controllers = ['app/Controller'];
 
     public function __construct(private string $basePath) {}
 
@@ -75,6 +83,13 @@ class ApplicationBuilder
         return $this;
     }
 
+    public function withControllers(string ...$directories): self
+    {
+        $this->controllers = array_values(array_unique([...$this->controllers, ...$directories]));
+
+        return $this;
+    }
+
     public function create(): Application
     {
         $values = $this->loadConfig();
@@ -100,6 +115,14 @@ class ApplicationBuilder
         $container->instance(ResiliencePipelineFactory::class, $resilienceFactory);
         $container->instance(ResilienceRuntime::class, $resilienceRuntime);
         $router = new Router;
+        $root = realpath($this->basePath);
+        $controllerPaths = array_map(
+            fn (string $directory): string => preg_match('~^(?:[a-zA-Z]:[/\\\\]|/)~', $directory)
+                ? $directory
+                : ($root ?: $this->basePath).DIRECTORY_SEPARATOR.$directory,
+            array_values(array_unique($this->controllers)),
+        );
+        $controllerClasses = $this->discoverControllers($controllerPaths);
         if ($this->jobs !== []) {
             if (! array_key_exists('runtime', $values)) {
                 $values['runtime'] = [];
@@ -172,12 +195,148 @@ class ApplicationBuilder
             $route($router);
         }
 
+        foreach ($controllerClasses as $controllerClass) {
+            if (! $container->has($controllerClass)) {
+                $container->register($controllerClass, 'singleton');
+            }
+        }
+
+        $this->registerDiscoveredRoutes($router, $controllerClasses);
+
         return $application;
+    }
+
+    /** @param list<string> $directories
+     * @return list<class-string>
+     */
+    private function discoverControllers(array $directories): array
+    {
+        $classes = [];
+        foreach ($directories as $directory) {
+            if (! is_dir($directory)) {
+                continue;
+            }
+            $iterator = new RecursiveIteratorIterator(new \RecursiveCallbackFilterIterator(
+                new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
+                static fn (\SplFileInfo $file): bool => ! $file->isLink()
+                    && ! ($file->isDir() && in_array($file->getFilename(), ['vendor', '.git', '.superpowers', '.worktrees', '.tusk'], true)),
+            ));
+            $files = iterator_to_array($iterator, false);
+            usort($files, static fn (\SplFileInfo $left, \SplFileInfo $right): int => strcmp($left->getPathname(), $right->getPathname()));
+            foreach ($files as $file) {
+                if (! $file->isFile() || $file->getExtension() !== 'php') {
+                    continue;
+                }
+                try {
+                    $declaredClasses = $this->classesIn($file->getPathname());
+                    $isIncluded = in_array(realpath($file->getPathname()), get_included_files(), true);
+                    $loadedClasses = array_filter($declaredClasses, static fn (string $class): bool => class_exists($class));
+                    $missingClasses = array_filter($declaredClasses, static fn (string $class): bool => ! class_exists($class));
+                    if (! $isIncluded && $loadedClasses !== [] && $missingClasses !== []) {
+                        throw new RuntimeException('Controller file declares an already-loaded class and cannot be safely included: '.$file->getPathname());
+                    }
+                    if (! $isIncluded && $loadedClasses === [] && $declaredClasses !== []) {
+                        require_once $file->getPathname();
+                    }
+                    foreach ($declaredClasses as $class) {
+                        if (! class_exists($class)) {
+                            continue;
+                        }
+                        if ((new \ReflectionClass($class))->getAttributes(Controller::class) !== []) {
+                            $classes[] = $class;
+                        }
+                    }
+                } catch (\Throwable $exception) {
+                    throw new RuntimeException('Failed to discover controller file '.$file->getPathname().': '.$exception->getMessage(), 0, $exception);
+                }
+            }
+        }
+        $classes = array_values(array_unique($classes));
+        sort($classes, SORT_STRING);
+
+        return $classes;
+    }
+
+    /** @return list<class-string> */
+    private function classesIn(string $path): array
+    {
+        $source = file_get_contents($path);
+        if ($source === false) {
+            throw new RuntimeException("Unable to read controller file: {$path}");
+        }
+
+        $tokens = token_get_all($source, TOKEN_PARSE);
+        $namespace = '';
+        $classes = [];
+        foreach ($tokens as $index => $token) {
+            if (! is_array($token)) {
+                continue;
+            }
+            if ($token[0] === T_NAMESPACE) {
+                $namespace = '';
+                for ($cursor = $index + 1; isset($tokens[$cursor]) && $tokens[$cursor] !== ';' && $tokens[$cursor] !== '{'; $cursor++) {
+                    if (is_array($tokens[$cursor]) && in_array($tokens[$cursor][0], [T_STRING, T_NAME_QUALIFIED, T_NS_SEPARATOR], true)) {
+                        $namespace .= $tokens[$cursor][1];
+                    }
+                }
+            }
+            if ($token[0] !== T_CLASS) {
+                continue;
+            }
+            $previous = $index - 1;
+            while ($previous >= 0 && is_array($tokens[$previous]) && in_array($tokens[$previous][0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT, T_FINAL, T_ABSTRACT, T_READONLY], true)) {
+                $previous--;
+            }
+            if ($previous >= 0 && is_array($tokens[$previous]) && in_array($tokens[$previous][0], [T_NEW, T_DOUBLE_COLON], true)) {
+                continue;
+            }
+            for ($cursor = $index + 1; isset($tokens[$cursor]); $cursor++) {
+                if (! is_array($tokens[$cursor]) || in_array($tokens[$cursor][0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                    continue;
+                }
+                if ($tokens[$cursor][0] === T_STRING) {
+                    $classes[] = $namespace === '' ? $tokens[$cursor][1] : $namespace.'\\'.$tokens[$cursor][1];
+                }
+                break;
+            }
+        }
+
+        return $classes;
     }
 
     private function loadConfig(): array
     {
         return ProjectConfigurationLoader::load($this->basePath);
+    }
+
+    /** @param list<class-string> $controllerClasses */
+    private function registerDiscoveredRoutes(Router $router, array $controllerClasses): void
+    {
+        $routes = [];
+        foreach ($controllerClasses as $class) {
+            $reflection = new \ReflectionClass($class);
+            $prefixAttributes = $reflection->getAttributes(Controller::class);
+            $prefix = $prefixAttributes[0]->newInstance()->prefix;
+            foreach ($reflection->getMethods() as $method) {
+                foreach ($method->getAttributes(Route::class, \ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
+                    $route = $attribute->newInstance();
+                    foreach ($route->methods as $httpMethod) {
+                        $path = '/'.trim(trim($prefix, '/').'/'.trim($route->path, '/'), '/');
+                        $path = $path === '/' ? '/' : rtrim($path, '/');
+                        $key = strtoupper($httpMethod).' '.$path;
+                        if ($router->hasRoute(strtoupper($httpMethod), $path)) {
+                            throw new RuntimeException("Duplicate controller route {$key}: explicit route conflicts with {$class}::{$method->getName()}.");
+                        }
+                        if (isset($routes[$key])) {
+                            throw new RuntimeException("Duplicate discovered controller route {$key}: {$routes[$key]} and {$class}::{$method->getName()}.");
+                        }
+                        $routes[$key] = $class.'::'.$method->getName();
+                    }
+                }
+            }
+        }
+
+        $router->registerControllers($controllerClasses);
     }
 
     private function resolveFile(string $path, string $kind): string

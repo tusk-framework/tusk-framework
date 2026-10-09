@@ -62,7 +62,7 @@ class Container implements ContainerInterface
     /**
      * Registers a class as a service.
      */
-    public function register(string $className): void
+    public function register(string $className, ?string $defaultScope = null): void
     {
         try {
             $reflection = new ReflectionClass($className);
@@ -73,7 +73,7 @@ class Container implements ContainerInterface
         $jobAttributes = $reflection->getAttributes(AsJob::class);
         $attributes = $reflection->getAttributes(Service::class);
 
-        if (empty($attributes) && empty($jobAttributes)) {
+        if (empty($attributes) && empty($jobAttributes) && $defaultScope === null) {
             return;
         }
 
@@ -81,7 +81,9 @@ class Container implements ContainerInterface
             throw new RuntimeException('Job handler must be an instantiable JobHandlerInterface: '.$className);
         }
 
-        $scope = empty($jobAttributes) ? $attributes[0]->newInstance()->scope : 'job';
+        $scope = ! empty($jobAttributes)
+            ? 'job'
+            : (! empty($attributes) ? $attributes[0]->newInstance()->scope : $defaultScope);
 
         $this->definitions[$className] = $className;
         $this->scopes[$className] = $scope;
