@@ -78,7 +78,7 @@ The metadata response adds:
 
 1. Engine creates the private listener/token before starting RoadRunner, then injects `TUSK_ENGINE_RESILIENCE_DIAGNOSTICS_URL` and `TUSK_ENGINE_RESILIENCE_DIAGNOSTICS_TOKEN` into the RoadRunner process environment. The token is not written to generated `.rr.yaml`, command output, logs, or metadata.
 2. A worker initializes the reporter only when both environment values are present and the URL is loopback HTTP. Otherwise it uses a no-op reporter.
-3. The worker reports its initial configuration/state and circuit transitions immediately. Request/job completion acts as a coalesced heartbeat, sent at most once per 15 seconds per worker. Each report uses a single 50 ms bounded attempt; failures never go to application output.
+3. The worker reports its initial configuration/state and circuit transitions immediately. Request/job completion acts as a coalesced heartbeat, sent at most once per 15 seconds per worker. A single 50 ms monotonic deadline covers snapshot preparation and transport; cURL receives only the remaining budget and does not wait for a response beyond it. Failures never go to application output.
 4. Engine accepts only the configured listener, constant-time token comparison, bounded JSON, supported schema, valid identifiers/states, and a sequence newer than that worker's last accepted report.
 5. Metadata computes a read-only aggregation from immutable copies. A report from one worker cannot erase another worker's current snapshot.
 6. Engine stops the private listener and clears snapshots as part of managed runtime shutdown. Startup fails if the private listener cannot bind when diagnostics are enabled; no worker is started with a missing or partially configured reporter channel.

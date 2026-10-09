@@ -46,7 +46,7 @@ final class RuntimeObservabilityTest extends TestCase
         $clock = new RuntimeObservabilityClock;
         $collector = new WorkerDiagnosticsCollector($clock);
         $provider = new RecordingTelemetryProvider;
-        $observability = new RuntimeObservability($provider, $collector, $clock, 'roadrunner', 'worker-1');
+        $observability = new RuntimeObservability($provider, $collector, $clock, workerId: 'worker-1', runtime: 'roadrunner');
 
         $observability->applicationStarted();
         $observability->workerStarted();
@@ -72,12 +72,23 @@ final class RuntimeObservabilityTest extends TestCase
         self::assertSame(1, $collector->snapshot()->jobsTotal);
     }
 
+    public function test_fourth_positional_argument_remains_the_worker_id(): void
+    {
+        $collector = new WorkerDiagnosticsCollector;
+        $observability = new RuntimeObservability(new RecordingTelemetryProvider, $collector, new RuntimeObservabilityClock, 'worker-1');
+
+        $observability->workerStarted();
+
+        self::assertSame('worker-1', $collector->snapshot()->workerId);
+        self::assertSame('unknown', $collector->snapshot()->runtime);
+    }
+
     public function test_request_failure_is_recorded_without_replacing_the_original_exception(): void
     {
         $clock = new RuntimeObservabilityClock;
         $collector = new WorkerDiagnosticsCollector($clock);
         $provider = new RecordingTelemetryProvider;
-        $observability = new RuntimeObservability($provider, $collector, $clock, 'roadrunner', 'worker-1');
+        $observability = new RuntimeObservability($provider, $collector, $clock, workerId: 'worker-1', runtime: 'roadrunner');
         $observability->applicationStarted();
         $observability->workerStarted();
         $observability->requestStarted(new ServerRequest('POST', '/orders'));
@@ -94,7 +105,7 @@ final class RuntimeObservabilityTest extends TestCase
     {
         $clock = new RuntimeObservabilityClock;
         $collector = new WorkerDiagnosticsCollector($clock);
-        $observability = new RuntimeObservability(new FailingBoundaryTelemetryProvider, $collector, $clock, 'roadrunner', 'worker-1');
+        $observability = new RuntimeObservability(new FailingBoundaryTelemetryProvider, $collector, $clock, workerId: 'worker-1', runtime: 'roadrunner');
 
         $observability->applicationStarted();
         $observability->workerStarted();

@@ -11,6 +11,8 @@ use Tusk\Contracts\Observability\WorkerLifecycleCheckpointInterface;
 
 final class EngineResilienceReporter implements WorkerLifecycleCheckpointInterface
 {
+    private const REPORT_TIMEOUT_MILLISECONDS = 50;
+
     private ?string $workerId = null;
 
     private ?int $processId = null;
@@ -83,6 +85,7 @@ final class EngineResilienceReporter implements WorkerLifecycleCheckpointInterfa
         }
 
         try {
+            $deadline = ($this->clock)() + self::REPORT_TIMEOUT_MILLISECONDS;
             $snapshot = $this->registry->snapshot();
             if (! $snapshot->reportable() || count($snapshot->policies()) > 256 || count($snapshot->circuits()) > 256) {
                 return;
@@ -106,17 +109,23 @@ final class EngineResilienceReporter implements WorkerLifecycleCheckpointInterfa
                 return;
             }
 
+            $remainingMilliseconds = $deadline - ($this->clock)();
+            if ($remainingMilliseconds <= 0) {
+                return;
+            }
+            $timeoutSeconds = $remainingMilliseconds / 1000;
+
             if ($this->transport !== null) {
-                ($this->transport)($this->endpoint, $this->token, $payload, 0.05);
+                ($this->transport)($this->endpoint, $this->token, $payload, $timeoutSeconds);
             } else {
-                self::send($this->endpoint, $this->token, $payload);
+                self::send($this->endpoint, $this->token, $payload, $deadline, $this->clock);
             }
         } catch (Throwable) {
             // Reporting has no influence on requests, jobs, or policies.
         }
     }
 
-    private static function send(string $endpoint, string $token, string $payload): void
+    private static function send(string $endpoint, string $token, string $payload, int $deadline, Closure $clock): void
     {
         if (! extension_loaded('curl')) {
             return;
@@ -127,21 +136,24 @@ final class EngineResilienceReporter implements WorkerLifecycleCheckpointInterfa
             return;
         }
 
-        try {
-            curl_setopt_array($handle, [
-                CURLOPT_POST => true,
-                CURLOPT_HTTPHEADER => ['Authorization: Bearer '.$token, 'Content-Type: application/json'],
-                CURLOPT_POSTFIELDS => $payload,
-                CURLOPT_TIMEOUT_MS => 50,
-                CURLOPT_CONNECTTIMEOUT_MS => 50,
-                CURLOPT_FOLLOWLOCATION => false,
-                CURLOPT_MAXREDIRS => 0,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_NOSIGNAL => true,
-            ]);
-            curl_exec($handle);
-        } finally {
-            curl_close($handle);
+        curl_setopt_array($handle, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer '.$token, 'Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_MAXREDIRS => 0,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_NOSIGNAL => true,
+        ]);
+        $remainingMilliseconds = $deadline - $clock();
+        if ($remainingMilliseconds <= 0) {
+            return;
         }
+        $timeoutMilliseconds = $remainingMilliseconds;
+        curl_setopt_array($handle, [
+            CURLOPT_TIMEOUT_MS => $timeoutMilliseconds,
+            CURLOPT_CONNECTTIMEOUT_MS => $timeoutMilliseconds,
+        ]);
+        curl_exec($handle);
     }
 }

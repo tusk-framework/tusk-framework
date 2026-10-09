@@ -30,8 +30,8 @@ final class RuntimeObservability implements LifecycleObserverInterface, RequestS
         private readonly TelemetryProviderInterface $provider,
         private readonly WorkerDiagnosticsCollector $collector,
         private readonly DiagnosticsClockInterface $clock = new SystemDiagnosticsClock,
-        string $runtime = 'unknown',
         private readonly string $workerId = '',
+        string $runtime = 'unknown',
         private readonly ?WorkerLifecycleCheckpointInterface $checkpoint = null,
     ) {
         $this->runtime = $runtime;

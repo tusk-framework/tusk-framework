@@ -50,7 +50,8 @@ final class EngineResilienceReporterTest extends TestCase
         self::assertCount(2, $attempts);
         self::assertSame('http://127.0.0.1:8765/internal/v1/resilience/snapshot', $attempts[0][0]);
         self::assertSame('private-token', $attempts[0][1]);
-        self::assertSame(0.05, $attempts[0][3]);
+        self::assertGreaterThan(0.0, $attempts[0][3]);
+        self::assertLessThanOrEqual(0.05, $attempts[0][3]);
         $first = json_decode($attempts[0][2], true, 512, JSON_THROW_ON_ERROR);
         $second = json_decode($attempts[1][2], true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('v1', $first['schema_version']);
@@ -62,6 +63,81 @@ final class EngineResilienceReporterTest extends TestCase
         self::assertLessThanOrEqual(65536, strlen($attempts[0][2]));
         self::assertStringNotContainsString('RuntimeException', $attempts[0][2]);
         self::assertStringNotContainsString('max_attempts', $attempts[0][2]);
+    }
+
+    public function test_transport_receives_only_the_remaining_report_deadline(): void
+    {
+        $timeouts = [];
+        $now = 0;
+        $reporter = new EngineResilienceReporter(
+            new ResilienceDiagnosticsRegistry(new InMemoryStateStore),
+            'http://127.0.0.1:8765',
+            'token',
+            static function (string $url, string $token, string $payload, float $timeout) use (&$timeouts): void {
+                $timeouts[] = $timeout;
+            },
+            static function () use (&$now): int {
+                return $now++;
+            },
+        );
+
+        $reporter->checkpoint('worker_started');
+
+        self::assertCount(1, $timeouts);
+        self::assertGreaterThan(0.0, $timeouts[0]);
+        self::assertLessThan(0.05, $timeouts[0]);
+    }
+
+    public function test_curl_report_does_not_wait_for_a_slow_receiver_response(): void
+    {
+        if (! extension_loaded('curl') || ! function_exists('proc_open')) {
+            self::markTestSkipped('The bounded transport integration test requires cURL and proc_open.');
+        }
+
+        $serverCode = <<<'PHP'
+$server = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage);
+if ($server === false) {
+    fwrite(STDERR, $errorMessage);
+    exit(1);
+}
+echo stream_socket_get_name($server, false), "\n";
+flush();
+$client = @stream_socket_accept($server, 5.0);
+if (is_resource($client)) {
+    usleep(1_000_000);
+    fclose($client);
+}
+fclose($server);
+PHP;
+        $pipes = [];
+        $process = proc_open([PHP_BINARY, '-r', $serverCode], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        if (! is_resource($process)) {
+            self::fail('Could not start the local slow-response receiver.');
+        }
+
+        try {
+            fclose($pipes[0]);
+            $address = trim((string) fgets($pipes[1]));
+            $port = (int) substr($address, (int) strrpos($address, ':') + 1);
+            self::assertGreaterThan(0, $port);
+
+            $reporter = new EngineResilienceReporter(
+                new ResilienceDiagnosticsRegistry(new InMemoryStateStore),
+                'http://127.0.0.1:'.$port,
+                'token',
+            );
+            $startedAt = hrtime(true);
+
+            $reporter->checkpoint('worker_started');
+
+            $elapsedMilliseconds = (hrtime(true) - $startedAt) / 1_000_000;
+            self::assertLessThan(500.0, $elapsedMilliseconds);
+        } finally {
+            proc_terminate($process);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            proc_close($process);
+        }
     }
 
     public function test_heartbeat_is_coalesced_across_request_and_job_boundaries(): void
