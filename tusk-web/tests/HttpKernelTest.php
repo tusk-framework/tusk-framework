@@ -11,12 +11,55 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Tusk\Contracts\Container\ContainerInterface;
 use Tusk\Web\Http\Request;
+use Tusk\Web\Http\ArgumentBinder;
+use Tusk\Validation\Constraint\NotBlank;
+use Tusk\Validation\ConstraintValidator;
+use Tusk\Validation\CustomValidatorRegistry;
+use Tusk\Validation\Metadata\ValidationMetadataCompiler;
+use Tusk\Validation\Metadata\ValidationMetadataRegistry;
+use Tusk\Validation\Validator;
 use Tusk\Web\HttpKernel;
 use Tusk\Web\Router\RouteMatch;
 use Tusk\Web\Router\RouterInterface;
 
 class HttpKernelTest extends TestCase
 {
+    public function test_validation_problem_is_safe_in_debug_and_next_request_is_clean(): void
+    {
+        putenv('APP_DEBUG=1');
+        $metadata = new ValidationMetadataRegistry;
+        $metadata->register(KernelInput::class, (new ValidationMetadataCompiler)->compile(KernelInput::class));
+        $metadata->seal();
+        $custom = new CustomValidatorRegistry;
+        $custom->seal();
+        $binder = new ArgumentBinder(new Validator(new ConstraintValidator), $metadata, $custom);
+        $kernel = new HttpKernel(new TestContainer([KernelInputController::class => new KernelInputController]), new TestRouter(KernelInputController::class, 'create'), $binder);
+
+        $invalid = $kernel->handle((new ServerRequest('POST', '/hello'))
+            ->withParsedBody(['name' => 'secret-submitted-value', 'email' => 'bad'])
+            ->withHeader('Accept', 'application/json'));
+        $body = (string) $invalid->getBody();
+        $problem = json_decode($body, true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame(422, $invalid->getStatusCode());
+        self::assertSame('application/problem+json', $invalid->getHeaderLine('Content-Type'));
+        self::assertSame(['type', 'title', 'status', 'instance', 'request_id', 'errors'], array_keys($problem));
+        self::assertSame('urn:tusk:problem:validation', $problem['type']);
+        self::assertSame('Validation Failed', $problem['title']);
+        self::assertSame(422, $problem['status']);
+        self::assertSame('/hello', $problem['instance']);
+        self::assertSame($invalid->getHeaderLine('X-Request-Id'), $problem['request_id']);
+        self::assertSame(['email' => [['code' => 'email', 'message' => 'This value is not a valid email address.']]], $problem['errors']);
+        self::assertStringNotContainsString('secret-submitted-value', $body);
+        foreach (['exception', 'message', 'file', 'line', 'trace'] as $key) {
+            self::assertArrayNotHasKey($key, $problem);
+        }
+
+        $valid = $kernel->handle((new ServerRequest('POST', '/hello'))
+            ->withParsedBody(['name' => 'Ada', 'email' => 'ada@example.com'])
+            ->withHeader('Accept', 'application/json'));
+        self::assertSame(200, $valid->getStatusCode());
+        self::assertSame(['name' => 'Ada'], json_decode((string) $valid->getBody(), true, flags: JSON_THROW_ON_ERROR));
+    }
     protected function tearDown(): void
     {
         unset($_ENV['APP_DEBUG'], $_SERVER['APP_DEBUG']);
@@ -283,6 +326,16 @@ final class RequiredInputController
 final readonly class RequiredInput
 {
     public function __construct(public string $name) {}
+}
+
+final readonly class KernelInput
+{
+    public function __construct(#[NotBlank] public string $name, #[\Tusk\Validation\Constraint\Email] public string $email) {}
+}
+
+final class KernelInputController
+{
+    public function create(KernelInput $input): array { return ['name' => $input->name]; }
 }
 
 final class RecordingMiddleware implements MiddlewareInterface

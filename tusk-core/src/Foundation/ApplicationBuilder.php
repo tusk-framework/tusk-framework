@@ -29,16 +29,20 @@ use Tusk\Runtime\Jobs\JobHandlerRegistry;
 use Tusk\Runtime\Jobs\JobHandlerScanner;
 use Tusk\Runtime\RuntimeConfiguration;
 use Tusk\Runtime\RuntimeModuleFactory;
-use Tusk\Web\Attribute\Controller;
-use Tusk\Web\Attribute\Route;
-use Tusk\Web\Http\Request;
-use Tusk\Web\HttpKernel;
-use Tusk\Web\Router\Router;
-use Tusk\Web\Router\RouterInterface;
+use Tusk\Validation\ConstraintValidator;
 use Tusk\Validation\CustomValidatorInterface;
 use Tusk\Validation\CustomValidatorRegistry;
 use Tusk\Validation\Metadata\ValidationMetadataCompiler;
 use Tusk\Validation\Metadata\ValidationMetadataRegistry;
+use Tusk\Validation\Validator;
+use Tusk\Validation\ValidatorInterface;
+use Tusk\Web\Attribute\Controller;
+use Tusk\Web\Attribute\Route;
+use Tusk\Web\Http\ArgumentBinder;
+use Tusk\Web\Http\Request;
+use Tusk\Web\HttpKernel;
+use Tusk\Web\Router\Router;
+use Tusk\Web\Router\RouterInterface;
 
 class ApplicationBuilder
 {
@@ -163,7 +167,8 @@ class ApplicationBuilder
         $config = new Repository($values);
         $runtimeConfiguration = RuntimeConfiguration::fromArray($values);
         $runtimeModules = RuntimeModuleFactory::fromConfiguration($runtimeConfiguration);
-        $kernel = new HttpKernel($container, $router);
+        $validator = new Validator(new ConstraintValidator);
+        $kernel = new HttpKernel($container, $router, new ArgumentBinder($validator, $metadataRegistry, $customValidatorRegistry));
         $application = new Application(
             $this->basePath,
             $container,
@@ -185,6 +190,7 @@ class ApplicationBuilder
             HttpKernel::class => $kernel,
             ValidationMetadataRegistry::class => $metadataRegistry,
             CustomValidatorRegistry::class => $customValidatorRegistry,
+            ValidatorInterface::class => $validator,
             Application::class => $application,
             ApplicationInterface::class => $application,
         ] as $id => $instance) {

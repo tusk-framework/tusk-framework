@@ -27,9 +27,43 @@ use Tusk\Validation\Constraint\NotBlank;
 use Tusk\Validation\CustomValidatorInterface;
 use Tusk\Validation\CustomValidatorRegistry;
 use Tusk\Validation\Metadata\ValidationMetadataRegistry;
+use Tusk\Validation\Violation;
 
 class ApplicationBuilderTest extends TestCase
 {
+    public function test_prepared_validators_run_with_constraints_and_do_not_leak_to_next_request(): void
+    {
+        file_put_contents($this->basePath.'/routes/web.php', <<<'PHP'
+<?php
+return static function (\Tusk\Web\Router\Router $router): void {
+    $router->addRoute(['POST'], '/validated', [\Tusk\Core\Tests\Foundation\ValidationController::class, 'accepted']);
+};
+PHP);
+        file_put_contents($this->basePath.'/bootstrap/providers.php', <<<'PHP'
+<?php
+return static function (\Tusk\Core\Container\Container $container): void {
+    $container->instance(\Tusk\Core\Tests\Foundation\ValidationService::class, new \Tusk\Core\Tests\Foundation\ValidationService());
+    $container->instance(\Tusk\Core\Tests\Foundation\ValidationController::class, new \Tusk\Core\Tests\Foundation\ValidationController());
+};
+PHP);
+        $application = Application::configure($this->basePath)
+            ->withRouting(web: 'routes/web.php')
+            ->withProviders(['bootstrap/providers.php'])
+            ->withValidator(ValidInput::class, RejectBlankInputValidator::class)
+            ->create();
+
+        $invalid = $application->handle((new ServerRequest('POST', '/validated'))->withHeader('Accept', 'application/json')->withParsedBody(['name' => ' ']));
+        $problem = json_decode((string) $invalid->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame(422, $invalid->getStatusCode());
+        self::assertSame(['name' => [
+            ['code' => 'not_blank', 'message' => 'This value should not be blank.'],
+            ['code' => 'name.rejected', 'message' => 'Name is rejected.'],
+        ]], $problem['errors']);
+
+        $valid = $application->handle((new ServerRequest('POST', '/validated'))->withHeader('Accept', 'application/json')->withParsedBody(['name' => 'Ada']));
+        self::assertSame(200, $valid->getStatusCode());
+        self::assertSame(['name' => 'Ada'], json_decode((string) $valid->getBody(), true, flags: JSON_THROW_ON_ERROR));
+    }
     private string $basePath;
 
     protected function setUp(): void
@@ -646,7 +680,21 @@ final class ValidationController
 {
     public function submit(ValidInput $input): void {}
 
+    public function accepted(ValidInput $input): array { return ['name' => $input->name]; }
+
     public function invalid(InvalidInput $input): void {}
+}
+
+final class RejectBlankInputValidator implements CustomValidatorInterface
+{
+    public function __construct(private ValidationService $service) {}
+
+    public function validate(object $value): iterable
+    {
+        if ($this->service->value === 'available' && $value instanceof ValidInput && trim($value->name) === '') {
+            yield new Violation('name', 'name.rejected', 'Name is rejected.');
+        }
+    }
 }
 
 final readonly class ValidationService
