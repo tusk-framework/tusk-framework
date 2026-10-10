@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+
+import { planNextRelease } from '../scripts/plan-release.mjs';
+
+function git(cwd, ...args) {
+  return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: 'pipe' }).trim();
+}
+
+function fixture(commitMessage) {
+  const directory = mkdtempSync(join(tmpdir(), 'tusk-release-test-'));
+  const remote = join(directory, 'remote.git');
+  const repositoryRoot = join(directory, 'repo');
+
+  git(directory, 'init', '--bare', remote);
+  git(directory, 'init', '-b', 'main', repositoryRoot);
+  git(repositoryRoot, 'config', 'user.name', 'Release Test');
+  git(repositoryRoot, 'config', 'user.email', 'release-test@example.invalid');
+  git(repositoryRoot, 'commit', '--allow-empty', '-m', 'chore: baseline');
+  git(repositoryRoot, 'tag', 'v1.2.3');
+  git(repositoryRoot, 'commit', '--allow-empty', '-m', commitMessage);
+  git(repositoryRoot, 'remote', 'add', 'origin', remote);
+  git(repositoryRoot, 'push', 'origin', 'main', '--tags');
+
+  return { directory, repositoryRoot };
+}
+
+const cases = [
+  ['fix: repair parsing', { version: '1.2.4', type: 'patch', tag: 'v1.2.4' }],
+  ['feat: add routing', { version: '1.3.0', type: 'minor', tag: 'v1.3.0' }],
+  ['feat!: replace routing contract', { version: '2.0.0', type: 'major', tag: 'v2.0.0' }],
+  ['fix: update client\n\nBREAKING CHANGE: remove old client method', { version: '2.0.0', type: 'major', tag: 'v2.0.0' }],
+  ['docs: clarify installation', null],
+  ['chore: update repository settings', null],
+];
+
+for (const [message, expected] of cases) {
+  test(`plans ${JSON.stringify(message)} as ${expected?.type ?? 'no release'}`, async () => {
+    const { directory, repositoryRoot } = fixture(message);
+
+    try {
+      assert.deepEqual(await planNextRelease({ repositoryRoot, env: process.env }), expected);
+      assert.deepEqual(git(repositoryRoot, 'tag', '--list'), 'v1.2.3');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+}
