@@ -97,14 +97,21 @@ export function createGithubIO({ env = process.env, run = runCommand } = {}) {
   };
 }
 
-function configuredAssets(version) {
-  const config = JSON.parse(readFileSync(new URL('../../.releaserc.json', import.meta.url), 'utf8'));
+export function resolveReleaseAssets(config, version, repositoryRoot = process.cwd()) {
   const github = config.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === '@semantic-release/github');
   return github[1].assets.map((asset) => {
-    const path = asset.name.replaceAll('${nextRelease.version}', version);
+    const path = resolve(repositoryRoot, asset.path
+      .replaceAll('${nextRelease.version}', version)
+      .replaceAll('*', version));
     const bytes = readFileSync(path);
-    return { path, name: basename(path), digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}` };
+    const name = asset.name.replaceAll('${nextRelease.version}', version);
+    return { path, name, digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}` };
   });
+}
+
+function configuredAssets(version) {
+  const config = JSON.parse(readFileSync(new URL('../../.releaserc.json', import.meta.url), 'utf8'));
+  return resolveReleaseAssets(config, version);
 }
 
 export async function main(command, env = process.env) {
