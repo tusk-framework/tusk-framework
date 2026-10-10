@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { planNextRelease } from '../scripts/plan-release.mjs';
@@ -33,7 +34,7 @@ function fixture(commitMessage, { revert = false } = {}) {
   const commitArgs = ['commit', '--allow-empty', '-m', commitMessage];
   if (revertedCommit) commitArgs.push('-m', `This reverts commit ${revertedCommit}.`);
   git(repositoryRoot, ...commitArgs);
-  git(repositoryRoot, 'remote', 'add', 'origin', remote);
+  git(repositoryRoot, 'remote', 'add', 'origin', pathToFileURL(remote).href);
   git(repositoryRoot, 'push', 'origin', 'main', '--tags');
 
   return { directory, repositoryRoot };
