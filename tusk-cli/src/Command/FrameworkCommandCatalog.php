@@ -12,14 +12,14 @@ use Tusk\Cli\Commands\ConfigValidateCommand;
 use Tusk\Cli\Commands\InitCommand;
 use Tusk\Cli\Commands\MakeControllerCommand;
 use Tusk\Cli\Commands\MakeEntityCommand;
+use Tusk\Cli\Commands\MakeMigrationCommand;
 use Tusk\Cli\Commands\MigrateCommand;
+use Tusk\Cli\Commands\MigrationRollbackCommand;
+use Tusk\Cli\Commands\MigrationStatusCommand;
 use Tusk\Cli\Commands\QueueWorkerCommand;
 use Tusk\Cli\Commands\RunCommand;
 use Tusk\Cli\Commands\RuntimeDiagnosticsCommand;
 use Tusk\Cli\Commands\SchemaSyncCommand;
-use Tusk\Cli\Commands\MigrationStatusCommand;
-use Tusk\Cli\Commands\MigrationRollbackCommand;
-use Tusk\Cli\Commands\MakeMigrationCommand;
 
 /** @internal @phpstan-type Factory Closure(): Command */
 final class FrameworkCommandCatalog
@@ -28,7 +28,7 @@ final class FrameworkCommandCatalog
     private array $factories;
 
     /**
-     * @param array<string, Closure(): Command> $factoryOverrides Test and extension seam; names remain explicit.
+     * @param  array<string, Closure(): Command>  $factoryOverrides  Test and extension seam; names remain explicit.
      */
     public function __construct(string $projectRoot, array $factoryOverrides = [], ?Closure $resolveService = null)
     {
@@ -46,7 +46,7 @@ final class FrameworkCommandCatalog
             'queue:work' => ['Start the queue worker.', static fn (): Command => $resolveService(QueueWorkerCommand::class)],
             'runtime:diagnostics' => ['Show persistent runtime diagnostics.', static fn (): Command => new RuntimeDiagnosticsCommand],
             'make:migration' => ['Generate a database migration from ORM changes.', static fn (): Command => new MakeMigrationCommand($projectRoot)],
-            'migrate' => ['Apply pending database migrations.', static fn (): Command => $resolveService(MigrateCommand::class)],
+            'migrate' => ['Apply pending database migrations.', static fn (): Command => new MigrateCommand($projectRoot)],
             'migrate:status' => ['Show applied and pending database migrations.', static fn (): Command => new MigrationStatusCommand($projectRoot)],
             'migrate:rollback' => ['Roll back to a named migration version.', static fn (): Command => new MigrationRollbackCommand($projectRoot)],
             'schema:sync' => ['Synchronize the local development schema.', static fn (): Command => new SchemaSyncCommand($projectRoot)],

@@ -15,16 +15,25 @@ use Doctrine\ORM\ORMSetup;
 
 final class MigrationDependencyFactoryFactory
 {
+    private ?LazyEntityManagerLoader $entityManagerLoader = null;
+
     public function __construct(private readonly MigrationConfiguration $configuration) {}
 
     public function create(): DependencyFactory
     {
         $migrationConfig = new ConfigurationArray($this->configuration->values());
 
+        $this->entityManagerLoader = new LazyEntityManagerLoader($this->configuration);
+
         return DependencyFactory::fromEntityManager(
             $migrationConfig,
-            new LazyEntityManagerLoader($this->configuration),
+            $this->entityManagerLoader,
         );
+    }
+
+    public function close(): void
+    {
+        $this->entityManagerLoader?->close();
     }
 }
 
@@ -51,5 +60,10 @@ final class LazyEntityManagerLoader implements EntityManagerLoader
         }
 
         return $this->entityManager;
+    }
+
+    public function close(): void
+    {
+        $this->entityManager?->getConnection()->close();
     }
 }

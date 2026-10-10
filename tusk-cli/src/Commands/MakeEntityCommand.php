@@ -51,7 +51,7 @@ class MakeEntityCommand extends Command
 
         if ($success) {
             $output->writeln("<info>Entity created successfully at {$target}</info>");
-            $output->writeln("<comment>Remember to run 'php bin/tusk migrate' to update the schema.</comment>");
+            $output->writeln("<comment>Review the generated migration with 'php bin/tusk make:migration', then apply it with 'php bin/tusk migrate'.</comment>");
             return self::SUCCESS;
         } else {
             $output->writeln("<error>Error: Could not create entity. File may already exist.</error>");
