@@ -23,9 +23,26 @@ if (! $autoloadFile) {
 
 require $autoloadFile;
 
+$workingDirectory = getcwd() ?: '.';
+$projectRoot = realpath($workingDirectory) ?: $workingDirectory;
+$directory = $projectRoot;
+while (true) {
+    if (is_file($directory.'/tusk.json')) {
+        $projectRoot = $directory;
+        break;
+    }
+
+    $parentDirectory = dirname($directory);
+    if ($parentDirectory === $directory) {
+        break;
+    }
+
+    $directory = $parentDirectory;
+}
+
 // A project may invoke this entry point through a globally installed Tusk CLI.
 // Load the project's Composer autoloader without booting its application.
-$projectAutoloadFile = (getcwd() ?: '.').'/vendor/autoload.php';
+$projectAutoloadFile = $projectRoot.'/vendor/autoload.php';
 if (is_file($projectAutoloadFile) && realpath($projectAutoloadFile) !== realpath($autoloadFile)) {
     require_once $projectAutoloadFile;
 }
@@ -35,7 +52,6 @@ use Symfony\Component\Console\Input\ArgvInput;
 use Tusk\Cli\Command\FrameworkCommandCatalog;
 use Tusk\Cli\Command\FrameworkCommandLoader;
 
-$projectRoot = getcwd() ?: '.';
 $application = new Application('Tusk Framework CLI', '0.1.0');
 $frameworkCatalog = new FrameworkCommandCatalog($projectRoot);
 $compiledCommands = [];

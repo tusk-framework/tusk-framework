@@ -88,6 +88,25 @@ PHP);
         self::assertFileExists($root.'/src/Domain/Customer.php');
     }
 
+    public function test_commands_resolve_generated_project_root_when_invoked_from_nested_directory(): void
+    {
+        $root = $this->temporaryDirectory().'/generated-app';
+        $nestedDirectory = $root.'/tools';
+        $this->generateProject($root);
+        mkdir($nestedDirectory.'/vendor', 0755, true);
+        file_put_contents(
+            $nestedDirectory.'/vendor/autoload.php',
+            '<?php file_put_contents('.var_export($nestedDirectory.'/wrong-autoloader-loaded', true).', "loaded");',
+        );
+
+        [$status, $output] = $this->runCli($nestedDirectory, 'make:entity', 'Invoice');
+
+        self::assertSame(0, $status, $output);
+        self::assertFileExists($root.'/src/Domain/Invoice.php');
+        self::assertFileDoesNotExist($nestedDirectory.'/src/Domain/Invoice.php');
+        self::assertFileDoesNotExist($nestedDirectory.'/wrong-autoloader-loaded');
+    }
+
     public function test_framework_command_name_collision_is_rejected_when_loading_compiled_commands(): void
     {
         $root = $this->temporaryDirectory().'/generated-app';
@@ -112,7 +131,7 @@ PHP);
     }
 
     /** @return array{int, string} */
-    private function runCli(string $projectRoot, string ...$arguments): array
+    private function runCli(string $workingDirectory, string ...$arguments): array
     {
         $cliPath = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'tusk';
         $command = array_merge([PHP_BINARY, $cliPath], $arguments);
@@ -124,7 +143,7 @@ PHP);
                 '-d', 'extension=php_sqlite3.dll', $cliPath,
             ], $arguments);
         }
-        $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $projectRoot);
+        $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $workingDirectory);
         self::assertIsResource($process, 'Could not start the Framework CLI.');
         $output = stream_get_contents($pipes[1]).stream_get_contents($pipes[2]);
         fclose($pipes[1]);
