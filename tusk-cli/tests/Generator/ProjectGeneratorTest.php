@@ -44,14 +44,34 @@ class ProjectGeneratorTest extends TestCase
         (new ProjectGenerator)->generate('sample', 'api');
         $root = $this->directory.'/sample';
 
-        foreach (['app/Controller/HomeController.php', 'app/Jobs/WelcomeJob.php', 'app/Jobs/dispatch-example.php', 'bootstrap/app.php', 'bootstrap/providers.php', 'config/app.php', 'config/runtime.php', 'config/resilience.php', 'routes/web.php', 'public/index.php', '.gitignore', 'tusk.json', 'composer.json'] as $file) {
+        foreach (['README.md', 'app/Controller/HomeController.php', 'app/Jobs/WelcomeJob.php', 'app/Jobs/dispatch-example.php', 'bootstrap/app.php', 'bootstrap/providers.php', 'config/app.php', 'config/runtime.php', 'config/resilience.php', 'config/migrations.php', 'database/migrations', 'routes/web.php', 'public/index.php', '.gitignore', 'tusk.json', 'composer.json'] as $file) {
+            if ($file === 'database/migrations') {
+                self::assertDirectoryExists($root.'/'.$file);
+                continue;
+            }
             self::assertFileExists($root.'/'.$file);
         }
         self::assertStringContainsString('/.tusk/', file_get_contents($root.'/.gitignore'));
         self::assertDirectoryDoesNotExist($root.'/.tusk');
         self::assertFileDoesNotExist($root.'/.tusk/runtime/worker.php');
         self::assertSame(['port' => 8080, 'worker_count' => 4], json_decode(file_get_contents($root.'/tusk.json'), true, 512, JSON_THROW_ON_ERROR));
-        self::assertSame('app/', json_decode(file_get_contents($root.'/composer.json'), true, 512, JSON_THROW_ON_ERROR)['autoload']['psr-4']['App\\']);
+        $generatedComposer = json_decode(file_get_contents($root.'/composer.json'), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('app/', $generatedComposer['autoload']['psr-4']['App\\']);
+        self::assertSame('^3.9', $generatedComposer['require']['doctrine/migrations']);
+        $generatedReadme = file_get_contents($root.'/README.md');
+        self::assertStringContainsString('migrate --allow-production', $generatedReadme);
+        self::assertStringContainsString('Existing databases are never baselined', $generatedReadme);
+        $migrationConfig = require $root.'/config/migrations.php';
+        self::assertSame([
+            'migrations_paths' => [
+                'App\\Migrations' => 'database/migrations',
+            ],
+            'storage' => [
+                'table_storage' => [
+                    'table_name' => 'doctrine_migration_versions',
+                ],
+            ],
+        ], $migrationConfig);
         self::assertStringContainsString("->withJobs(__DIR__.'/../app/Jobs')", file_get_contents($root.'/bootstrap/app.php'));
         self::assertStringContainsString('capabilities.jobs', file_get_contents($root.'/config/runtime.php'));
         self::assertStringContainsString("AsJob('welcome.email')", file_get_contents($root.'/app/Jobs/WelcomeJob.php'));
@@ -61,9 +81,15 @@ class ProjectGeneratorTest extends TestCase
 
         require $root.'/app/Controller/HomeController.php';
         require $root.'/app/Jobs/dispatch-example.php';
+        file_put_contents(
+            $root.'/database/migrations/VersionProbe.php',
+            '<?php file_put_contents('.var_export($root.'/migration-executed', true).', "yes");',
+        );
         $application = require $root.'/bootstrap/app.php';
         self::assertInstanceOf(Application::class, $application);
         self::assertSame(realpath($root), realpath($application->basePath()));
+        self::assertDirectoryExists($root.'/database/migrations');
+        self::assertFileDoesNotExist($root.'/migration-executed');
         self::assertIsArray(require $root.'/config/app.php');
         self::assertIsArray(require $root.'/config/runtime.php');
         self::assertSame(['policies' => [], 'profiles' => []], require $root.'/config/resilience.php');

@@ -88,4 +88,52 @@ PHP, $namespace));
             rmdir($directory);
         }
     }
+
+    public function test_duplicate_command_names_fail_with_both_declaring_classes(): void
+    {
+        $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'tusk-commands-'.bin2hex(random_bytes(4));
+        mkdir($directory, 0755, true);
+
+        $namespace = 'TuskCliDuplicateFixture'.bin2hex(random_bytes(4));
+        $firstClass = $namespace.'\\FirstCommand';
+        $secondClass = $namespace.'\\SecondCommand';
+        $first = $directory.DIRECTORY_SEPARATOR.'FirstCommand.php';
+        $second = $directory.DIRECTORY_SEPARATOR.'SecondCommand.php';
+
+        file_put_contents($first, sprintf(<<<'PHP'
+<?php
+
+namespace %s;
+
+use Tusk\Cli\Attribute\AsCommand;
+
+#[AsCommand('same-name')]
+final class FirstCommand {}
+PHP, $namespace));
+        file_put_contents($second, sprintf(<<<'PHP'
+<?php
+
+namespace %s;
+
+use Tusk\Cli\Attribute\AsCommand;
+
+#[AsCommand('same-name')]
+final class SecondCommand {}
+PHP, $namespace));
+
+        try {
+            try {
+                (new CommandCompiler)->scan([$directory]);
+                self::fail('Duplicate command names must not silently replace each other.');
+            } catch (\LogicException $exception) {
+                self::assertStringContainsString('same-name', $exception->getMessage());
+                self::assertStringContainsString($firstClass, $exception->getMessage());
+                self::assertStringContainsString($secondClass, $exception->getMessage());
+            }
+        } finally {
+            unlink($first);
+            unlink($second);
+            rmdir($directory);
+        }
+    }
 }

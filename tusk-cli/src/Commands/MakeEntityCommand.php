@@ -14,6 +14,11 @@ use Tusk\Contracts\Attributes\Service;
 #[AsCommand('make:entity', 'Create a new Doctrine Entity class')]
 class MakeEntityCommand extends Command
 {
+    public function __construct(private readonly string $projectRoot = '')
+    {
+        parent::__construct();
+    }
+
     protected function configure(): void
     {
         $this->setName('make:entity')
@@ -24,15 +29,23 @@ class MakeEntityCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $name = $input->getArgument('name');
+        if (! is_string($name) || ! $this->isSafeClassName($name)) {
+            $output->writeln('<error>Provide a safe relative class name, optionally with namespace segments.</error>');
+
+            return self::FAILURE;
+        }
+
         $className = basename(str_replace('\\', '/', $name));
         $namespace = 'App\\Domain';
-        
-        if (str_contains($name, '\\')) {
-            $namespace .= '\\'.dirname(str_replace('/', '\\', $name));
+
+        $relativeNamespace = str_replace('/', '\\', dirname(str_replace('\\', '/', $name)));
+        if ($relativeNamespace !== '.') {
+            $namespace .= '\\'.$relativeNamespace;
         }
 
         $stub = __DIR__.'/../../stubs/entity.stub';
-        $target = getcwd().'/src/Domain/'.$name.'.php';
+        $root = $this->projectRoot !== '' ? $this->projectRoot : (getcwd() ?: '.');
+        $target = rtrim($root, '/\\').'/src/Domain/'.str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $name).'.php';
 
         $generator = new StubGenerator;
 
@@ -51,11 +64,22 @@ class MakeEntityCommand extends Command
 
         if ($success) {
             $output->writeln("<info>Entity created successfully at {$target}</info>");
-            $output->writeln("<comment>Remember to run 'php bin/tusk migrate' to update the schema.</comment>");
+            $output->writeln("<comment>Review the generated migration with 'php bin/tusk make:migration', then apply it with 'php bin/tusk migrate'.</comment>");
             return self::SUCCESS;
         } else {
             $output->writeln("<error>Error: Could not create entity. File may already exist.</error>");
             return self::FAILURE;
         }
+    }
+
+    private function isSafeClassName(string $name): bool
+    {
+        if ($name === '' || str_starts_with($name, '\\') || str_starts_with($name, '/') || preg_match('/^[A-Za-z]:/', $name) === 1) {
+            return false;
+        }
+
+        $segments = preg_split('~[\\\\/]~', $name);
+
+        return $segments !== false && count(array_filter($segments, static fn (string $segment): bool => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $segment) === 1)) === count($segments);
     }
 }

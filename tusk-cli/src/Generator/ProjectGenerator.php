@@ -15,7 +15,7 @@ class ProjectGenerator
             throw new \RuntimeException("Directory '$name' already exists!");
         }
 
-        foreach (['app/Controller', 'app/Jobs', 'bootstrap', 'config', 'routes', 'public'] as $directory) {
+        foreach (['app/Controller', 'app/Jobs', 'bootstrap', 'config', 'database/migrations', 'routes', 'public'] as $directory) {
             mkdir($baseDir.'/'.$directory, 0755, true);
         }
 
@@ -26,6 +26,8 @@ class ProjectGenerator
             'config-app.stub' => 'config/app.php',
             'config-runtime.stub' => 'config/runtime.php',
             'config-resilience.stub' => 'config/resilience.php',
+            'config-migrations.stub' => 'config/migrations.php',
+            'database-readme.stub' => 'README.md',
             'gitignore.stub' => '.gitignore',
             'welcome-job.stub' => 'app/Jobs/WelcomeJob.php',
             'dispatch-job.stub' => 'app/Jobs/dispatch-example.php',
@@ -61,6 +63,7 @@ PHP);
             'require' => [
                 'php' => '^8.2',
                 'tusk/framework' => 'dev-main',
+                'doctrine/migrations' => '^3.9',
             ],
             'autoload' => [
                 'psr-4' => [

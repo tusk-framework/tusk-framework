@@ -3,6 +3,7 @@
 namespace Tusk\Cli;
 
 use FilesystemIterator;
+use LogicException;
 use RecursiveCallbackFilterIterator;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -58,12 +59,23 @@ class CommandCompiler
                                     /** @var AsCommand $cmd */
                                     $cmd = $attribute->newInstance();
 
+                                    if (isset($commands[$cmd->name])) {
+                                        throw new LogicException(sprintf(
+                                            "Command '%s' is declared by both %s and %s.",
+                                            $cmd->name,
+                                            $commands[$cmd->name]['class'],
+                                            $className,
+                                        ));
+                                    }
+
                                     $commands[$cmd->name] = [
                                         'class' => $className,
                                         'description' => $cmd->description,
                                     ];
                                 }
                             }
+                        } catch (LogicException $e) {
+                            throw $e;
                         } catch (ReflectionException $e) {
                         } catch (Throwable $e) {
                         }
