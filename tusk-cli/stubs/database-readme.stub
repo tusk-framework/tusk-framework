@@ -1,0 +1,25 @@
+# Tusk application
+
+## Database changes
+
+Create an entity, generate and review its migration, then check and apply versions:
+
+```bash
+php vendor/bin/tusk make:entity Billing/Invoice
+php vendor/bin/tusk make:migration "Create invoices"
+php vendor/bin/tusk migrate:status
+php vendor/bin/tusk migrate --dry-run
+php vendor/bin/tusk migrate
+```
+
+Production deployments must explicitly acknowledge schema changes with
+`php vendor/bin/tusk migrate --allow-production`. To export SQL for review, use
+`php vendor/bin/tusk migrate --write-sql=var/migrations.sql`. Rollbacks require
+an explicit target and `--allow-down`; production additionally requires
+`--allow-production`. `schema:sync --force` is a local development convenience
+and is prohibited in production. Existing databases are never baselined
+automatically; back them up, compare the schema, and explicitly register a
+reviewed baseline migration before applying later versions.
+
+See the [database migrations guide](https://github.com/tusk-framework/tusk-framework/blob/main/docs/database-migrations.md)
+for the complete workflow and safeguards.

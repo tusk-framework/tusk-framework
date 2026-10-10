@@ -123,6 +123,17 @@ For a complete runnable example covering typed CRUD routes, constructor
 injection, validation, Problem Details, and the PSR-7 escape hatch, see the
 [Typed HTTP CRUD guide](docs/guides/typed-http-crud.md).
 
+### Versioned database migrations
+
+Generated projects include first-party Doctrine migration commands that work
+without `tusk build`. Use `make:migration`, `migrate:status`, and `migrate` for
+reviewed versioned schema changes; production execution requires
+`--allow-production`. The meaning of `migrate` changed from direct SchemaTool
+synchronization to versioned migrations. The old local-only operation is now
+`schema:sync --force`, and existing databases are never baselined automatically.
+See the [database migrations guide](docs/database-migrations.md) for dry-runs,
+SQL export, rollback, production safeguards, and existing-database adoption.
+
 ---
 
 ## The Compiler Companion

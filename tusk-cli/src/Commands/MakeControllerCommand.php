@@ -14,6 +14,11 @@ use Tusk\Contracts\Attributes\Service;
 #[AsCommand('make:controller', 'Create a new HTTP Controller class')]
 class MakeControllerCommand extends Command
 {
+    public function __construct(private readonly string $projectRoot = '')
+    {
+        parent::__construct();
+    }
+
     protected function configure(): void
     {
         $this->setName('make:controller')
@@ -24,13 +29,20 @@ class MakeControllerCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $name = $input->getArgument('name');
+        if (! is_string($name) || ! $this->isSafeClassName($name)) {
+            $output->writeln('<error>Provide a safe relative class name, optionally with namespace segments.</error>');
+
+            return self::FAILURE;
+        }
+
         $className = basename(str_replace('\\', '/', $name));
         $route = strtolower(preg_replace('/Controller$/', '', $className) ?: $className);
         $relativeNamespace = str_replace('/', '\\', dirname(str_replace('\\', '/', $name)));
         $namespace = 'App\\Controller'.($relativeNamespace === '.' ? '' : '\\'.$relativeNamespace);
 
         $stub = __DIR__.'/../../stubs/controller.stub';
-        $target = getcwd().DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'Controller'.DIRECTORY_SEPARATOR.str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $name).'.php';
+        $root = $this->projectRoot !== '' ? $this->projectRoot : (getcwd() ?: '.');
+        $target = rtrim($root, '/\\').DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'Controller'.DIRECTORY_SEPARATOR.str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $name).'.php';
 
         $generator = new StubGenerator;
 
@@ -55,5 +67,16 @@ class MakeControllerCommand extends Command
 
             return self::FAILURE;
         }
+    }
+
+    private function isSafeClassName(string $name): bool
+    {
+        if ($name === '' || str_starts_with($name, '\\') || str_starts_with($name, '/') || preg_match('/^[A-Za-z]:/', $name) === 1) {
+            return false;
+        }
+
+        $segments = preg_split('~[\\\\/]~', $name);
+
+        return $segments !== false && count(array_filter($segments, static fn (string $segment): bool => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $segment) === 1)) === count($segments);
     }
 }

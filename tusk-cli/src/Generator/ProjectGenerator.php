@@ -27,6 +27,7 @@ class ProjectGenerator
             'config-runtime.stub' => 'config/runtime.php',
             'config-resilience.stub' => 'config/resilience.php',
             'config-migrations.stub' => 'config/migrations.php',
+            'database-readme.stub' => 'README.md',
             'gitignore.stub' => '.gitignore',
             'welcome-job.stub' => 'app/Jobs/WelcomeJob.php',
             'dispatch-job.stub' => 'app/Jobs/dispatch-example.php',

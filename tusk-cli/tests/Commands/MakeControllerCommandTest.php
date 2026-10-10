@@ -58,4 +58,28 @@ final class MakeControllerCommandTest extends TestCase
         self::assertSame(1, $tester->execute(['name' => 'Admin\\UserController'], ['interactive' => false]));
         self::assertStringContainsString('File may already exist', $tester->getDisplay());
     }
+
+    public function test_explicit_project_root_is_used_without_changing_the_process_directory(): void
+    {
+        $root = $this->directory.'/generated-app';
+        mkdir($root);
+        $tester = new CommandTester(new MakeControllerCommand($root));
+
+        self::assertSame(0, $tester->execute(['name' => 'Admin\\UserController'], ['interactive' => false]));
+        self::assertFileExists($root.'/app/Controller/Admin/UserController.php');
+        self::assertFileDoesNotExist($this->directory.'/app/Controller/Admin/UserController.php');
+        self::assertStringContainsString('namespace App\\Controller\\Admin;', file_get_contents($root.'/app/Controller/Admin/UserController.php'));
+    }
+
+    public function test_rejects_absolute_and_traversing_controller_names(): void
+    {
+        foreach (['../OutsideController', '..\\OutsideController', '/tmp/OutsideController', 'C:\\OutsideController'] as $name) {
+            $tester = new CommandTester(new MakeControllerCommand($this->directory));
+
+            self::assertSame(1, $tester->execute(['name' => $name], ['interactive' => false]), $name);
+            self::assertStringContainsString('safe relative class name', $tester->getDisplay());
+        }
+
+        self::assertDirectoryDoesNotExist(dirname($this->directory).'/app');
+    }
 }

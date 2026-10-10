@@ -44,7 +44,7 @@ class ProjectGeneratorTest extends TestCase
         (new ProjectGenerator)->generate('sample', 'api');
         $root = $this->directory.'/sample';
 
-        foreach (['app/Controller/HomeController.php', 'app/Jobs/WelcomeJob.php', 'app/Jobs/dispatch-example.php', 'bootstrap/app.php', 'bootstrap/providers.php', 'config/app.php', 'config/runtime.php', 'config/resilience.php', 'config/migrations.php', 'database/migrations', 'routes/web.php', 'public/index.php', '.gitignore', 'tusk.json', 'composer.json'] as $file) {
+        foreach (['README.md', 'app/Controller/HomeController.php', 'app/Jobs/WelcomeJob.php', 'app/Jobs/dispatch-example.php', 'bootstrap/app.php', 'bootstrap/providers.php', 'config/app.php', 'config/runtime.php', 'config/resilience.php', 'config/migrations.php', 'database/migrations', 'routes/web.php', 'public/index.php', '.gitignore', 'tusk.json', 'composer.json'] as $file) {
             if ($file === 'database/migrations') {
                 self::assertDirectoryExists($root.'/'.$file);
                 continue;
@@ -58,6 +58,9 @@ class ProjectGeneratorTest extends TestCase
         $generatedComposer = json_decode(file_get_contents($root.'/composer.json'), true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('app/', $generatedComposer['autoload']['psr-4']['App\\']);
         self::assertSame('^3.9', $generatedComposer['require']['doctrine/migrations']);
+        $generatedReadme = file_get_contents($root.'/README.md');
+        self::assertStringContainsString('migrate --allow-production', $generatedReadme);
+        self::assertStringContainsString('Existing databases are never baselined', $generatedReadme);
         $migrationConfig = require $root.'/config/migrations.php';
         self::assertSame([
             'migrations_paths' => [
