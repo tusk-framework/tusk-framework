@@ -1,0 +1,12 @@
+<?php
+
+return [
+    'migrations_paths' => [
+        'App\\Migrations' => 'database/migrations',
+    ],
+    'storage' => [
+        'table_storage' => [
+            'table_name' => 'doctrine_migration_versions',
+        ],
+    ],
+];

@@ -16,6 +16,7 @@
         "psr/event-dispatcher": "^1.0",
         "firebase/php-jwt": "^7.0",
         "psr/container": "^2.0",
+        "doctrine/migrations": "^3.9",
         "doctrine/orm": "^3.6",
         "symfony/cache": "7.*",
         "symfony/var-exporter": "7.*",
