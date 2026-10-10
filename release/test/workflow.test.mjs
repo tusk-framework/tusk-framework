@@ -14,6 +14,7 @@ test('workflow preserves required checks and confines release authority to succe
   assert.equal(validate.name, undefined);
   assert.equal(php.name, undefined);
   assert.deepEqual(php.strategy.matrix['php-version'], ['8.2', '8.3', '8.4']);
+  assert.match(php.steps.find(({ id }) => id === 'composer-cache').run, />> "\$GITHUB_OUTPUT"/);
   assert.deepEqual(workflow.permissions, { contents: 'read' });
   assert.deepEqual(release.needs, ['validate', 'test']);
   assert.match(release.if, /success\(\)/);
