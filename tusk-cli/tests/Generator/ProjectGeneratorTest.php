@@ -56,6 +56,7 @@ class ProjectGeneratorTest extends TestCase
         self::assertFileDoesNotExist($root.'/.tusk/runtime/worker.php');
         self::assertSame(['port' => 8080, 'worker_count' => 4], json_decode(file_get_contents($root.'/tusk.json'), true, 512, JSON_THROW_ON_ERROR));
         $generatedComposer = json_decode(file_get_contents($root.'/composer.json'), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('dev-main', $generatedComposer['require']['tusk-framework/framework']);
         self::assertSame('app/', $generatedComposer['autoload']['psr-4']['App\\']);
         self::assertSame('^3.9', $generatedComposer['require']['doctrine/migrations']);
         $generatedReadme = file_get_contents($root.'/README.md');

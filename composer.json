@@ -1,5 +1,5 @@
 {
-    "name": "tusk/framework",
+    "name": "tusk-framework/framework",
     "description": "The Tusk Framework - Domain-first PHP application framework",
     "type": "library",
     "license": "MIT",

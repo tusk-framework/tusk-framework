@@ -17,7 +17,7 @@ function fixture() {
   git(repository, 'init', '-q');
   git(repository, 'config', 'core.autocrlf', 'false');
   writeFileSync(join(repository, 'marker.txt'), 'requested commit\n');
-  writeFileSync(join(repository, 'composer.json'), '{"name":"tusk/framework"}\n');
+  writeFileSync(join(repository, 'composer.json'), '{"name":"tusk-framework/framework"}\n');
   git(repository, 'add', 'marker.txt', 'composer.json');
   git(repository, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'first');
   const requestedCommit = git(repository, 'rev-parse', 'HEAD');
@@ -47,7 +47,7 @@ test('archives tracked files from the requested commit, even after a newer commi
     const marker = execFileSync('tar', ['-xOzf', archivePath, 'marker.txt'], { encoding: 'utf8' });
     const manifest = execFileSync('tar', ['-xOzf', archivePath, 'composer.json'], { encoding: 'utf8' });
     assert.equal(marker, 'requested commit\n');
-    assert.equal(manifest, '{"name":"tusk/framework"}\n');
+    assert.equal(manifest, '{"name":"tusk-framework/framework"}\n');
   });
 });
 

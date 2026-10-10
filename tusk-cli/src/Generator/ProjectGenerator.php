@@ -62,7 +62,7 @@ PHP);
             'type' => 'project',
             'require' => [
                 'php' => '^8.2',
-                'tusk/framework' => 'dev-main',
+                'tusk-framework/framework' => 'dev-main',
                 'doctrine/migrations' => '^3.9',
             ],
             'autoload' => [

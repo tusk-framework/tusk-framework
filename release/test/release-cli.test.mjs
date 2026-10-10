@@ -8,7 +8,7 @@ import { join } from 'node:path';
 
 const sha = 'a'.repeat(40);
 const env = { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main',
-  GITHUB_SHA: sha, GITHUB_REPOSITORY: 'tusk/framework', RELEASE_VERSION: '', GH_TOKEN: 'test-token' };
+  GITHUB_SHA: sha, GITHUB_REPOSITORY: 'tusk-framework/tusk-framework', RELEASE_VERSION: '', GH_TOKEN: 'test-token' };
 const cli = () => import('../scripts/release-cli.mjs');
 
 test('remote tag parsing dereferences annotated stable tags and ignores prereleases', async () => {
@@ -35,8 +35,8 @@ test('provenance verification binds both files to repository, workflow, main and
     assert.deepEqual(args.slice(0, 2), ['attestation', 'verify']);
     assert.equal(args[args.indexOf('--source-digest') + 1], sha);
     assert.equal(args[args.indexOf('--source-ref') + 1], 'refs/heads/main');
-    assert.equal(args[args.indexOf('--signer-workflow') + 1], 'tusk/framework/.github/workflows/ci.yml');
-    assert.equal(args[args.indexOf('--repo') + 1], 'tusk/framework');
+    assert.equal(args[args.indexOf('--signer-workflow') + 1], 'tusk-framework/tusk-framework/.github/workflows/ci.yml');
+    assert.equal(args[args.indexOf('--repo') + 1], 'tusk-framework/tusk-framework');
     assert.ok(args.includes('--deny-self-hosted-runners'));
   }
 });
@@ -82,8 +82,21 @@ test('asset upload uses gh release upload without the destructive clobber flag',
   const calls = [];
   const io = createGithubIO({ env, run(command, args) { calls.push([command, args]); return ''; } });
   await io.uploadAsset({ tag: 'v0.3.2' }, { name: 'archive.tar.gz', path: 'release/dist/archive.tar.gz' }, { id: 42 });
-  assert.deepEqual(calls, [['gh', ['release', 'upload', 'v0.3.2', 'release/dist/archive.tar.gz', '--repo', 'tusk/framework']]]);
+  assert.deepEqual(calls, [['gh', ['release', 'upload', 'v0.3.2', 'release/dist/archive.tar.gz', '--repo', 'tusk-framework/tusk-framework']]]);
   assert.ok(!calls[0][1].some((arg) => /clobber|DELETE/i.test(arg)));
+});
+
+test('release API and gh commands target the framework GitHub repository slug', async () => {
+  const { createGithubIO } = await cli();
+  const calls = [];
+  const io = createGithubIO({ env, run(command, args) { calls.push([command, args]);
+    if (args[0] === 'api') return '[]';
+    return '';
+  } });
+  await io.state({ tag: 'v0.3.2' });
+  await io.uploadAsset({ tag: 'v0.3.2' }, { name: 'archive.tar.gz', path: 'release/dist/archive.tar.gz' }, { id: 42 });
+  assert.ok(calls.some(([, args]) => args[0] === 'api' && args[1].startsWith('repos/tusk-framework/tusk-framework/releases')));
+  assert.ok(calls.some(([, args]) => args[0] === 'release' && args.at(-1) === 'tusk-framework/tusk-framework'));
 });
 
 test('semantic-release asset globs and version-templated names use the supported fields', async () => {
