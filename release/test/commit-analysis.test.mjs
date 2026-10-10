@@ -11,7 +11,7 @@ function git(cwd, ...args) {
   return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: 'pipe' }).trim();
 }
 
-function fixture(commitMessage) {
+function fixture(commitMessage, { revert = false } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'tusk-release-test-'));
   const remote = join(directory, 'remote.git');
   const repositoryRoot = join(directory, 'repo');
@@ -21,8 +21,15 @@ function fixture(commitMessage) {
   git(repositoryRoot, 'config', 'user.name', 'Release Test');
   git(repositoryRoot, 'config', 'user.email', 'release-test@example.invalid');
   git(repositoryRoot, 'commit', '--allow-empty', '-m', 'chore: baseline');
+  let revertedCommit = null;
+  if (revert) {
+    git(repositoryRoot, 'commit', '--allow-empty', '-m', 'feat: routing behavior');
+    revertedCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+  }
   git(repositoryRoot, 'tag', 'v1.2.3');
-  git(repositoryRoot, 'commit', '--allow-empty', '-m', commitMessage);
+  const commitArgs = ['commit', '--allow-empty', '-m', commitMessage];
+  if (revertedCommit) commitArgs.push('-m', `This reverts commit ${revertedCommit}.`);
+  git(repositoryRoot, ...commitArgs);
   git(repositoryRoot, 'remote', 'add', 'origin', remote);
   git(repositoryRoot, 'push', 'origin', 'main', '--tags');
 
@@ -36,11 +43,13 @@ const cases = [
   ['fix: update client\n\nBREAKING CHANGE: remove old client method', { version: '2.0.0', type: 'major', tag: 'v2.0.0' }],
   ['docs: clarify installation', null],
   ['chore: update repository settings', null],
+  ['perf: speed up routing', null],
+  ['revert: restore old routing behavior', null, { revert: true }],
 ];
 
-for (const [message, expected] of cases) {
+for (const [message, expected, options] of cases) {
   test(`plans ${JSON.stringify(message)} as ${expected?.type ?? 'no release'}`, async () => {
-    const { directory, repositoryRoot } = fixture(message);
+    const { directory, repositoryRoot } = fixture(message, options);
 
     try {
       assert.deepEqual(await planNextRelease({ repositoryRoot, env: process.env }), expected);
