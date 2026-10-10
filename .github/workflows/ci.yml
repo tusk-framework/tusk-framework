@@ -23,6 +23,18 @@ jobs:
 
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        persist-credentials: false
+
+    - name: Set up release tooling
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24.19.0'
+
+    - name: Install and test release tooling
+      run: |
+        npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
+        npm test
 
     - name: Set up Go for actionlint
       uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
@@ -64,6 +76,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        persist-credentials: false
 
     - name: Setup PHP
       uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
@@ -103,62 +117,44 @@ jobs:
       id-token: write
       attestations: write
       artifact-metadata: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ inputs.version }}
 
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 0
-        persist-credentials: false
+        persist-credentials: true
 
-    - name: Gate bootstrap and automatic release
-      id: release-gate
-      shell: bash
-      env:
-        RELEASE_EVENT: ${{ github.event_name }}
-        RELEASE_REF: ${{ github.ref }}
-        RELEASE_VERSION: ${{ inputs.version }}
-        RELEASE_COMMIT: ${{ github.sha }}
-      run: |
-        set -euo pipefail
-        if [[ "$RELEASE_REF" != "refs/heads/main" ]]; then
-          echo 'Releases require main.' >&2
-          exit 1
-        fi
+    - name: Set up release tooling
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24.19.0'
 
-        git fetch --tags origin
-        remote_main_commit="$(git ls-remote origin refs/heads/main | cut -f1)"
-        if [[ -z "$remote_main_commit" || "$remote_main_commit" != "$RELEASE_COMMIT" ]]; then
-          echo 'The workflow commit is no longer the current main commit.' >&2
-          exit 1
-        fi
+    - name: Install release tooling
+      run: npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
 
-        if [[ "$RELEASE_EVENT" == "workflow_dispatch" ]]; then
-          if [[ "$RELEASE_VERSION" != "0.3.2" ]]; then
-            echo 'The initial release accepts only version 0.3.2.' >&2
-            exit 1
-          fi
-          if git show-ref --verify --quiet refs/tags/v0.3.2; then
-            tag_commit="$(git rev-list -n 1 refs/tags/v0.3.2)"
-            if [[ "$tag_commit" != "$RELEASE_COMMIT" ]]; then
-              echo 'v0.3.2 points to a different commit.' >&2
-            else
-              echo 'v0.3.2 already exists; refusing a second bootstrap.' >&2
-            fi
-            exit 1
-          fi
-          if [[ -n "$(git tag --list 'v[0-9]*')" ]]; then
-            echo 'An existing release tag prevents initial bootstrap.' >&2
-            exit 1
-          fi
-          echo 'mode=bootstrap' >> "$GITHUB_OUTPUT"
-        elif [[ "$RELEASE_EVENT" == "push" ]]; then
-          if ! git show-ref --verify --quiet refs/tags/v0.3.2; then
-            echo 'v0.3.2 does not exist; skipping automatic release calculation.'
-            echo 'mode=skip' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo 'mode=automatic' >> "$GITHUB_OUTPUT"
-        else
-          echo 'Unsupported release event.' >&2
-          exit 1
-        fi
+    - name: Inspect latest stable publication and rebuild its exact source
+      id: recovery
+      run: node release/scripts/release-cli.mjs prepare-recovery
+
+    - name: Recover verified missing release objects before version planning
+      if: steps.recovery.outputs.ready == 'true'
+      run: node release/scripts/release-cli.mjs publish-recovery
+
+    - name: Select bootstrap or semantic-release candidate and build exact source
+      id: candidate
+      run: node release/scripts/release-cli.mjs prepare
+
+    - name: Attest archive and checksum before immutable publication
+      if: steps.candidate.outputs.ready == 'true' && steps.candidate.outputs.mode != 'recovery'
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: |
+          ${{ steps.candidate.outputs.archive }}
+          ${{ steps.candidate.outputs.checksum }}
+
+    - name: Publish the exact tag and only missing verified assets
+      if: steps.candidate.outputs.ready == 'true'
+      run: node release/scripts/release-cli.mjs publish

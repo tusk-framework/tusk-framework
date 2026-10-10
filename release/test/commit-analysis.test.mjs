@@ -52,7 +52,17 @@ for (const [message, expected, options] of cases) {
     const { directory, repositoryRoot } = fixture(message, options);
 
     try {
-      assert.deepEqual(await planNextRelease({ repositoryRoot, env: process.env }), expected);
+      // These are local main fixtures, even when validate runs on a PR. Do not
+      // let the enclosing Actions event choose the fixture's release branch.
+      const env = Object.fromEntries(Object.entries(process.env)
+        .filter(([key]) => key !== 'CI' && !key.startsWith('GITHUB_') && key !== 'GH_TOKEN'));
+      const planned = await planNextRelease({ repositoryRoot, env });
+      if (expected === null) assert.equal(planned, null);
+      else {
+        assert.deepEqual({ version: planned.version, type: planned.type, tag: planned.tag }, expected);
+        assert.equal(typeof planned.notes, 'string');
+        assert.ok(planned.notes.length > 0);
+      }
       assert.deepEqual(git(repositoryRoot, 'tag', '--list'), 'v1.2.3');
     } finally {
       rmSync(directory, { recursive: true, force: true });

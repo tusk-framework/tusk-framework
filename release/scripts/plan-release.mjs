@@ -9,7 +9,7 @@ export async function planNextRelease({ repositoryRoot, env }) {
   const result = await semanticRelease(
     {
       ...config,
-      plugins: config.plugins.filter((plugin) => plugin !== '@semantic-release/github'),
+      plugins: config.plugins.filter((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) !== '@semantic-release/github'),
       dryRun: true,
       ci: false,
     },
@@ -18,6 +18,6 @@ export async function planNextRelease({ repositoryRoot, env }) {
 
   if (!result) return null;
 
-  const { version, type, gitTag: tag } = result.nextRelease;
-  return { version, type, tag };
+  const { version, type, gitTag: tag, notes } = result.nextRelease;
+  return { version, type, tag, notes };
 }

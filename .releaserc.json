@@ -23,6 +23,16 @@
         "presetConfig": {}
       }
     ],
-    "@semantic-release/github"
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          { "path": "release/dist/tusk-framework-*.tar.gz", "name": "tusk-framework-${nextRelease.version}.tar.gz", "label": "Framework source archive" },
+          { "path": "release/dist/tusk-framework-*.tar.gz.sha256", "name": "tusk-framework-${nextRelease.version}.tar.gz.sha256", "label": "SHA-256 checksum" }
+        ],
+        "successComment": false,
+        "failComment": false
+      }
+    ]
   ]
 }
