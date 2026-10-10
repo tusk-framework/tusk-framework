@@ -106,6 +106,10 @@ JSON errors use Problem Details; exception details are omitted unless
 
 At application boot, Tusk discovers PHP controllers in `app/Controller` and registers their route attributes. Use `ApplicationBuilder::withControllers()` to add controller directories; discovery happens once during boot. Controllers can also be wired through explicit route callbacks, or use PSR-7 request and response interfaces when full HTTP control is needed.
 
+See the [Typed HTTP CRUD guide](../docs/guides/typed-http-crud.md) for a
+complete bootstrap-to-response example, including controller injection, DTO
+validation, and HTTP error cases.
+
 This package does not start an HTTP server. Tusk applications use the RoadRunner runtime for HTTP serving and worker lifecycle management.
 
 ## Installation

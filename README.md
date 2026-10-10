@@ -119,6 +119,10 @@ class UserController {
 }
 ```
 
+For a complete runnable example covering typed CRUD routes, constructor
+injection, validation, Problem Details, and the PSR-7 escape hatch, see the
+[Typed HTTP CRUD guide](docs/guides/typed-http-crud.md).
+
 ---
 
 ## The Compiler Companion
