@@ -17,6 +17,9 @@ function fixture(commitMessage, { revert = false } = {}) {
   const repositoryRoot = join(directory, 'repo');
 
   git(directory, 'init', '--bare', remote);
+  // Bare repositories may default HEAD to `master` even though this fixture
+  // only creates and pushes `main`; semantic-release fetches the remote HEAD.
+  git(directory, '--git-dir', remote, 'symbolic-ref', 'HEAD', 'refs/heads/main');
   git(directory, 'init', '-b', 'main', repositoryRoot);
   git(repositoryRoot, 'config', 'user.name', 'Release Test');
   git(repositoryRoot, 'config', 'user.email', 'release-test@example.invalid');
