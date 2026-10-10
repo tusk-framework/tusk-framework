@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Publish `tusk/framework` as a Composer package at `v0.3.2`, then automatically create later stable releases from successful `main` builds.
+**Goal:** Publish `tusk-framework/framework` as a Composer package at `v0.3.2`, then automatically create later stable releases from successful `main` builds.
 
 **Architecture:** Keep PHP/Composer as the framework runtime and add a locked, development-only Node release toolchain using semantic-release. Consolidate validation and the existing PHP matrix into one Actions workflow; a least-privilege release job depends on every required job, creates and attests release assets, and supports a guarded one-time `0.3.2` bootstrap. Packagist registration and its GitHub update hook are documented one-time operator steps.
 
@@ -145,12 +145,12 @@
 
 ### Task 6: Publish and verify the first Composer release
 
-**Prerequisites:** The implementation PR is merged with all required CI checks green; `tusk/framework` is registered on Packagist; Packagist's GitHub hook is enabled.
+**Prerequisites:** The implementation PR is merged with all required CI checks green; `tusk-framework/framework` is registered on Packagist; Packagist's GitHub hook is enabled.
 
 - [ ] **Step 1: Update local `main` from `origin/main` and verify the merged commit and required checks.**
 - [ ] **Step 2: Dispatch the initial-release workflow on `main` with version `0.3.2`.** Do not create or push the tag manually.
 - [ ] **Step 3: Verify GitHub tag/release `v0.3.2`, archive checksum, and provenance attestation**; reject any result that targets a different commit.
-- [ ] **Step 4: Verify Packagist exposes `tusk/framework` version `0.3.2`** using `composer show tusk/framework --all` from a clean app checkout.
+- [ ] **Step 4: Verify Packagist exposes `tusk-framework/framework` version `0.3.2`** using `composer show tusk-framework/framework --all` from a clean app checkout.
 - [ ] **Step 5: Run `composer install`, the app PHPUnit suite, and the Engine RoadRunner skeleton smoke test**; confirm the original app CI dependency-install blocker is gone.
 
 ## Self-Review

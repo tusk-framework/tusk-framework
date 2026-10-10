@@ -1,6 +1,6 @@
 # Framework release operations
 
-This repository publishes the Composer package `tusk/framework` from GitHub
+This repository publishes the Composer package `tusk-framework/framework` from GitHub
 releases. PHP and Composer remain the framework runtime; Node.js 24 is used only
 by CI to analyze Conventional Commits and run release-tool tests.
 
@@ -9,7 +9,7 @@ by CI to analyze Conventional Commits and run release-tool tests.
 After the release-automation PR is merged:
 
 1. Register `https://github.com/tusk-framework/tusk-framework` as the
-   `tusk/framework` package at [Packagist](https://packagist.org/packages/submit).
+   `tusk-framework/framework` package at [Packagist](https://packagist.org/packages/submit).
 2. Enable Packagist's GitHub integration/webhook for the repository and confirm
    Packagist can read `composer.json` and receive tag updates.
 3. Keep any Packagist token in Packagist/GitHub settings only. The GitHub release
@@ -32,8 +32,8 @@ source archive and SHA-256 checksum, and GitHub Actions provenance attestations
 for both files. Verify the package from a clean application checkout:
 
 ```sh
-composer show tusk/framework --all
-composer require 'tusk/framework:^0.3.2'
+composer show tusk-framework/framework --all
+composer require 'tusk-framework/framework:^0.3.2'
 ```
 
 The application repository's dependency workflow should then pass using the

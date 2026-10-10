@@ -99,7 +99,7 @@ Since Tusk is designed for persistent runtimes, its supported entry point is a *
 
 ### 1. Installation
 ```bash
-composer require tusk/framework
+composer require tusk-framework/framework
 ```
 
 ### 2. The Logic Layer
@@ -155,7 +155,7 @@ PHP compatibility matrix before publication. Release artifacts and provenance
 are produced from the reviewed source tree; private signing material is never
 committed to the repository.
 
-The initial `v0.3.2` publication requires a one-time `tusk/framework`
+The initial `v0.3.2` publication requires a one-time `tusk-framework/framework`
 registration on Packagist and its GitHub update integration to be enabled.
 This is an operator prerequisite; pull requests and normal `main` pushes do
 not publish before the guarded bootstrap.
