@@ -2,9 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main, develop]
   pull_request:
-    branches: [ "main" ]
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Initial Framework release version
+        required: true
+        type: choice
+        options:
+          - '0.3.2'
 
 permissions:
   contents: read
@@ -14,10 +22,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        persist-credentials: false
+
+    - name: Set up release tooling
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24.19.0'
+
+    - name: Install and test release tooling
+      run: |
+        npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
+        npm test
+
+    - name: Set up Go for actionlint
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      with:
+        go-version: '1.25'
+        cache: false
+
+    - name: Lint GitHub Actions workflows
+      run: go run github.com/rhysd/actionlint/cmd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca .github/workflows/*.yml
 
     - name: Setup PHP
-      uses: shivammathur/setup-php@v2
+      uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
       with:
         php-version: '8.2'
 
@@ -37,3 +66,95 @@ jobs:
           echo 'Removed runtime markers found in active Framework documentation or contracts.'
           exit 1
         fi
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.2', '8.3', '8.4']
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        persist-credentials: false
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+      with:
+        php-version: ${{ matrix.php-version }}
+        coverage: none
+        tools: composer, cs2pr
+
+    - name: Get composer cache directory
+      id: composer-cache
+      run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache dependencies
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+        restore-keys: ${{ runner.os }}-composer-
+
+    - name: Install dependencies
+      run: composer install --prefer-dist --no-progress
+
+    - name: Run PHPUnit Tests
+      run: vendor/bin/phpunit --testdox --colors=always
+
+  release:
+    needs: [validate, test]
+    if: >-
+      ${{ success() && github.ref == 'refs/heads/main' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: framework-release-main
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ inputs.version }}
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        fetch-depth: 0
+        persist-credentials: true
+
+    - name: Set up release tooling
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24.19.0'
+
+    - name: Install release tooling
+      run: npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
+
+    - name: Inspect latest stable publication and rebuild its exact source
+      id: recovery
+      run: node release/scripts/release-cli.mjs prepare-recovery
+
+    - name: Recover verified missing release objects before version planning
+      if: steps.recovery.outputs.ready == 'true'
+      run: node release/scripts/release-cli.mjs publish-recovery
+
+    - name: Select bootstrap or semantic-release candidate and build exact source
+      id: candidate
+      run: node release/scripts/release-cli.mjs prepare
+
+    - name: Attest archive and checksum before immutable publication
+      if: steps.candidate.outputs.ready == 'true' && steps.candidate.outputs.mode != 'recovery'
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: |
+          ${{ steps.candidate.outputs.archive }}
+          ${{ steps.candidate.outputs.checksum }}
+
+    - name: Publish the exact tag and only missing verified assets
+      if: steps.candidate.outputs.ready == 'true'
+      run: node release/scripts/release-cli.mjs publish

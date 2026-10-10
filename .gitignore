@@ -9,3 +9,5 @@ composer.lock
 .DS_Store
 /.tusk
 /.worktrees/
+/node_modules/
+/release/dist/
