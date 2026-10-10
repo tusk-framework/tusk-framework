@@ -155,6 +155,15 @@ PHP compatibility matrix before publication. Release artifacts and provenance
 are produced from the reviewed source tree; private signing material is never
 committed to the repository.
 
+The initial `v0.3.2` publication requires a one-time `tusk/framework`
+registration on Packagist and its GitHub update integration to be enabled.
+This is an operator prerequisite; pull requests and normal `main` pushes do
+not publish before the guarded bootstrap.
+
+For initial Packagist registration, the guarded `v0.3.2` bootstrap, automatic
+versioning, attestation verification, and interrupted-release recovery, see the
+[release operations guide](release/README.md).
+
 ---
 
 ## License

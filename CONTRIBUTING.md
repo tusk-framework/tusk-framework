@@ -153,6 +153,9 @@ Release artifacts and provenance must never contain private signing material.
 The release workflow is responsible for producing signed or attested release
 outputs from the reviewed source tree.
 
+For the one-time Packagist setup, release dispatch, version rules, provenance
+verification, and recovery procedure, follow the [release operations guide](release/README.md).
+
 ## Questions
 
 If you are unsure whether a change belongs in the Framework, open an issue with

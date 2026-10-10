@@ -31,7 +31,7 @@
 - [x] Task 2: Validate bootstrap policy and build attested source assets.
 - [x] Task 3: Consolidate CI and gate releases on all required checks.
 - [x] Task 4: Wire initial and automatic publishing, provenance, and recovery.
-- [ ] Task 5: Document and exercise the Packagist and operator workflow.
+- [x] Task 5: Document and exercise the Packagist and operator workflow.
 - [ ] Task 6: Publish and verify the first Composer release.
 
 Task 2: complete (commit d12a495..585f4c7, review approved; 10/10 focused tests passed in the controller run).
@@ -42,4 +42,5 @@ Task 1: complete (commits d12a495..2db9486, review clean; controller verificatio
 Task 3: complete (commit 8cb4866, review approved; pinned actionlint and structural checks reported green).
 Task 3: ⚠️ Task 4 must add Node release-tool tests to required CI, authenticate only release-job tag pushes while PRs remain read-only, and verify candidate tag/SHA plus recovery before publication.
 Task 4: complete (controller tests 54/54, composer validate, independent scoped review approved). Local actionlint download was blocked by the machine's invalid proxy at 127.0.0.1:9; structural workflow assertions passed and CI will run pinned actionlint. The first reviewer caught an unsupported `gh api` absolute upload URL and semantic-release asset config field mismatch; both were corrected and re-reviewed. Automatic release notes now flow into GitHub Releases.
+Task 5: complete; added release operator runbook and README/CONTRIBUTING links, documented Packagist as a one-time prerequisite, bootstrap/automatic/recovery behavior, and both provenance checks. Local Markdown links resolve. Full CI-equivalent PHP matrix and actionlint remain delegated to GitHub CI; local PHP lacks the PDO database driver noted in baseline verification.
 Ruling: recovery inspects the latest stable tag/release/assets before semantic-release planning; if release/assets are missing, rebuild from that tag's SHA, validate existing asset digests, and create/upload only missing objects. Bootstrap retry may recover only same `v0.3.2` SHA; conflicting SHA/digest fails. This avoids a partial publication blocking later releases without moving immutable state. Cost if wrong: a malformed latest tag could halt new releases until manually repaired, intentionally fail-closed.
