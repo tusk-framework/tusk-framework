@@ -25,7 +25,7 @@ final class MigrationConfigurationTest extends TestCase
         parent::tearDown();
     }
 
-    public function testRelativeMigrationPathsResolveFromProjectRootAfterChangingWorkingDirectory(): void
+    public function test_relative_migration_paths_resolve_from_project_root_after_changing_working_directory(): void
     {
         $root = $this->projectRoot();
         mkdir($root.'/database/migrations', 0777, true);
@@ -45,7 +45,7 @@ final class MigrationConfigurationTest extends TestCase
         self::assertSame($this->normalizePath($root.'/database/migrations'), $this->normalizePath($configuration->migrationsPaths()['App\\Migrations']));
     }
 
-    public function testAbsentConfigurationUsesGeneratedProjectDefaults(): void
+    public function test_absent_configuration_uses_generated_project_defaults(): void
     {
         $root = $this->projectRoot();
         $configuration = MigrationConfiguration::load($root);
@@ -57,7 +57,7 @@ final class MigrationConfigurationTest extends TestCase
         self::assertSame('execution_time', $configuration->executionTimeColumnName());
     }
 
-    public function testMalformedConfigurationReturnsActionableFailureWithoutLeakingSourceOrRuntimeDetails(): void
+    public function test_malformed_configuration_returns_actionable_failure_without_leaking_source_or_runtime_details(): void
     {
         $root = $this->projectRoot();
         file_put_contents($root.'/config/migrations.php', "<?php throw new \\RuntimeException('secret-driver-detail');");
@@ -72,7 +72,7 @@ final class MigrationConfigurationTest extends TestCase
         }
     }
 
-    public function testConfigurationAndFactoryConstructionDoNotConnectOrCreateSqliteFile(): void
+    public function test_configuration_and_factory_construction_do_not_connect_or_create_sqlite_file(): void
     {
         $root = $this->projectRoot();
         $this->withEnvironment([
@@ -87,7 +87,7 @@ final class MigrationConfigurationTest extends TestCase
         });
     }
 
-    public function testFactoryCreatesDependencyFactoryWithoutConnectingUntilConnectionIsRequested(): void
+    public function test_factory_creates_dependency_factory_without_connecting_until_connection_is_requested(): void
     {
         $root = $this->projectRoot();
         mkdir($root.'/app', 0777, true);
@@ -110,7 +110,7 @@ final class MigrationConfigurationTest extends TestCase
         });
     }
 
-    public function testDependencyFactoryUsesGeneratedNestedTableStorageName(): void
+    public function test_dependency_factory_uses_generated_nested_table_storage_name(): void
     {
         $root = $this->projectRoot();
         mkdir($root.'/app', 0777, true);
@@ -136,7 +136,33 @@ PHP);
         });
     }
 
-    public function testDatabaseDefaultsAndEntityPathsMatchEntityManagerFactoryEnvironmentSemantics(): void
+    public function test_doctrine_top_level_table_storage_configuration_is_preserved(): void
+    {
+        $root = $this->projectRoot();
+        file_put_contents($root.'/config/migrations.php', <<<'PHP'
+<?php
+return [
+    'migrations_paths' => ['App\\Migrations' => 'database/migrations'],
+    'table_storage' => ['table_name' => 'custom_versions', 'version_column_name' => 'migration_id'],
+];
+PHP);
+
+        $configuration = MigrationConfiguration::load($root);
+
+        self::assertSame('custom_versions', $configuration->tableName());
+        self::assertSame('migration_id', $configuration->versionColumnName());
+    }
+
+    public function test_production_mode_uses_project_env_when_not_exported_by_process(): void
+    {
+        $root = $this->projectRoot();
+        file_put_contents($root.'/.env', "APP_ENV=production\n");
+        $this->withEnvironment(['APP_ENV' => null], function () use ($root): void {
+            self::assertFalse(MigrationConfiguration::load($root)->isDevelopmentMode());
+        });
+    }
+
+    public function test_database_defaults_and_entity_paths_match_entity_manager_factory_environment_semantics(): void
     {
         $root = $this->projectRoot();
         file_put_contents($root.'/.env', "DB_DRIVER=pdo_sqlite\nDB_PATH=database/from-env.sqlite\nDB_ENTITY_PATHS={$root}/app,{$root}/modules/Domain\n");
@@ -164,14 +190,14 @@ PHP);
             self::assertSame('', $configuration->connectionParameters()['password']);
             self::assertSame('tusk', $configuration->connectionParameters()['dbname']);
 
-            $manager = (new EntityManagerFactory())();
+            $manager = (new EntityManagerFactory)();
             self::assertSame($paths, $manager->getConfiguration()->getMetadataDriverImpl()->getPaths());
             $manager->getConnection()->close();
             self::assertFileDoesNotExist($root.'/database/from-env.sqlite');
         });
     }
 
-    public function testMalformedMigrationShapeFailsWithConfigurationGuidance(): void
+    public function test_malformed_migration_shape_fails_with_configuration_guidance(): void
     {
         $root = $this->projectRoot();
         file_put_contents($root.'/config/migrations.php', '<?php return ["migrations_paths" => "not-a-map"];');
@@ -186,6 +212,7 @@ PHP);
         $root = $this->temporaryDirectory();
         mkdir($root.'/database', 0777, true);
         mkdir($root.'/config', 0777, true);
+
         return $root;
     }
 
@@ -194,6 +221,7 @@ PHP);
         $directory = sys_get_temp_dir().'/tusk-migration-test-'.bin2hex(random_bytes(8));
         mkdir($directory, 0777, true);
         $this->directories[] = $directory;
+
         return $directory;
     }
 

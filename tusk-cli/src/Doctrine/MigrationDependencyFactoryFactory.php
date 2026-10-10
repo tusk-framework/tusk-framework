@@ -44,7 +44,7 @@ final class LazyEntityManagerLoader implements EntityManagerLoader
         if ($this->entityManager === null) {
             $ormConfig = ORMSetup::createAttributeMetadataConfiguration(
                 $this->configuration->entityPaths(),
-                (string) (getenv('APP_ENV') ?: 'development') !== 'production',
+                $this->configuration->isDevelopmentMode(),
             );
             $connection = DriverManager::getConnection($this->configuration->connectionParameters(), $ormConfig);
             $this->entityManager = new EntityManager($connection, $ormConfig);

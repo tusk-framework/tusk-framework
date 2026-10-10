@@ -16,6 +16,7 @@ final class MigrationConfiguration
         private readonly array $values,
         private readonly array $connectionParameters,
         private readonly array $entityPaths,
+        private readonly string $sqlitePath,
     ) {}
 
     public static function load(string $projectRoot): self
@@ -56,7 +57,7 @@ final class MigrationConfiguration
         if (! is_array($storage)) {
             throw new RuntimeException('Migration configuration key "storage" must be an array.');
         }
-        $tableStorage = $storage['table_storage'] ?? [];
+        $tableStorage = $values['table_storage'] ?? $storage['table_storage'] ?? [];
         if (! is_array($tableStorage)) {
             throw new RuntimeException('Migration configuration key "storage.table_storage" must be an array.');
         }
@@ -84,11 +85,13 @@ final class MigrationConfiguration
             'password' => Env::get('DB_PASSWORD', ''),
             'dbname' => Env::get('DB_NAME', 'tusk'),
         ];
+        $sqlitePath = '';
         if ($driver === 'pdo_sqlite') {
-            $connectionParameters['path'] = self::resolvePath($root, (string) Env::get('DB_PATH', $root.'/database/database.sqlite'));
+            $sqlitePath = self::resolvePath($root, (string) Env::get('DB_PATH', $root.'/database/database.sqlite'));
+            $connectionParameters['path'] = $sqlitePath;
         }
 
-        return new self($root, $values, $connectionParameters, $entityPaths);
+        return new self($root, $values, $connectionParameters, $entityPaths, $sqlitePath);
     }
 
     /** @return array<string, mixed> */
@@ -101,6 +104,11 @@ final class MigrationConfiguration
     public function connectionParameters(): array
     {
         return $this->connectionParameters;
+    }
+
+    public function sqlitePath(): ?string
+    {
+        return $this->sqlitePath !== '' ? $this->sqlitePath : null;
     }
 
     /** @return list<string> */
@@ -140,6 +148,11 @@ final class MigrationConfiguration
         return $this->projectRoot;
     }
 
+    public function isDevelopmentMode(): bool
+    {
+        return Env::get('APP_ENV', 'development') !== 'production';
+    }
+
     private static function resolvePath(string $root, string $path): string
     {
         if ($path === '') {
@@ -148,6 +161,7 @@ final class MigrationConfiguration
         if (str_starts_with($path, '/') || preg_match('/^[A-Za-z]:[\\\\\/]/', $path) === 1 || str_starts_with($path, '\\\\')) {
             return rtrim($path, '/\\');
         }
+
         return rtrim($root, '/\\').'/'.ltrim($path, '/\\');
     }
 }
