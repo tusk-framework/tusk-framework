@@ -10,6 +10,8 @@ Give generated Tusk applications a safe, reviewable, repeatable workflow for dat
 - `Tusk\Cli\Commands\MigrateCommand` currently calls ORM `SchemaTool::updateSchema()` directly. It has no migration history and can change a schema without a reviewable migration file.
 - `EntityManagerFactory` discovers attribute-mapped entities under `src/Domain` by default and reads database connection settings from environment variables.
 - Generated projects currently have no migrations directory or migration configuration. Their SQLite database default is under `database/database.sqlite`.
+- `bin/tusk` compiles application services, routes, and commands from the project source tree; it does not scan installed Framework code under `vendor`, and generated applications must not need a prior `tusk build` just to access Framework-owned CLI commands.
+- Framework-owned commands and application-defined commands have distinct ownership: the Framework provides its own explicit command catalog, while application commands continue to use the existing compiled command registry.
 - The Engine forwards non-built-in commands to the installed Framework CLI. This design adds no Engine, RoadRunner, or worker-lifecycle responsibilities.
 - No existing Tusk project should be assumed to have a migration history. The old `migrate` behavior must not silently be treated as equivalent to versioned migrations.
 
@@ -33,7 +35,9 @@ Migration classes are ordinary, reviewable PHP files committed with the applicat
 
 ## First-party command contract
 
-The Framework exposes these project commands through its normal CLI; Engine forwarding remains unchanged:
+The Framework exposes these project commands through its normal CLI; Engine forwarding remains unchanged. They are registered explicitly in a Framework-owned command catalog, independent of the generated application's compiled command registry. A fresh generated project must be able to list and invoke Framework commands through `vendor/bin/tusk` without first running `tusk build`. Application-defined commands remain discoverable through the current compiled registry and do not need to be moved into the Framework catalog.
+
+The CLI combines the Framework catalog with the application's compiled commands when the latter are available. Framework command names are reserved: a compiled application command with the same name must fail with a clear registration error instead of silently replacing or shadowing either command. CLI startup must not scan `vendor` source files or require the application to compile its source tree before Framework commands are available.
 
 | Command | Contract |
 | --- | --- |
@@ -54,9 +58,13 @@ The Framework exposes these project commands through its normal CLI; Engine forw
 - Command errors return non-zero exit codes. User-facing errors identify the failed operation without printing connection URLs, usernames, passwords, environment values, stack traces, or raw driver diagnostics. Detailed exceptions may be sent only to an explicitly configured, access-controlled logger with secrets redacted.
 - Doctrine's own transaction and platform behavior is preserved. Tusk does not promise atomic rollback for databases or migrations that do not support it.
 
-## Bootstrap and ownership
+## CLI bootstrap and ownership
 
-Migration commands resolve the existing ORM EntityManager/DBAL connection through normal Tusk application composition, then construct Doctrine Migrations' `DependencyFactory` using the generated project configuration. Tusk does not shell out to `vendor/bin/doctrine-migrations`, create a parallel migration registry, or add a second ORM abstraction.
+The CLI establishes the generated project's base directory and environment, then registers Framework-owned commands from its explicit catalog. Migration command dependencies are resolved lazily from the project's existing Doctrine configuration and environment, then used to construct Doctrine Migrations' `DependencyFactory`. The migration CLI path must not depend on the application's compiled container, compiled command registry, or loading `bootstrap/app.php`; it must also avoid eagerly connecting to or creating the database for commands that do not need a connection. In particular, `migrate:status` must preserve the read-only behavior defined above.
+
+Application-defined commands continue to be loaded from the project's compiled command registry when present. Their existing build-and-register lifecycle is unchanged. The Framework catalog must not become a replacement registry for application commands.
+
+Tusk does not shell out to `vendor/bin/doctrine-migrations`, scan arbitrary vendor source, create a second migration registry, or add a second ORM abstraction. The Engine remains a forwarding layer and adds no migration registration or execution logic.
 
 The CLI command classes stay thin: option validation and Tusk-specific safety gates live in the adapters; migration algorithms, metadata storage, SQL generation, and migration class loading remain Doctrine's responsibility. The Engine continues to own process/runtime orchestration and simply forwards these Framework commands.
 
@@ -73,16 +81,21 @@ The behavior change is intentional because preserving the old `migrate` behavior
 - No automatic baseline, automatic rollback, automatic data migration, or inferred destructive-operation classifier.
 - No Engine command-dispatch redesign, RoadRunner integration, runtime health check, or worker lifecycle change.
 - No support for arbitrary multiple EntityManagers/connections in the first slice; generated defaults use the existing single Doctrine connection.
+- No requirement to compile application commands before listing or invoking Framework-owned CLI commands; this does not remove the existing compilation requirement for application-defined commands.
 
 ## Verification criteria
 
 - Composer resolves `doctrine/migrations:^3.9` with the Framework's PHP, ORM, DBAL, and Console constraints; generated applications lock the resolved release.
 - Generated-project integration tests verify migration configuration, namespace/path resolution from outside the project working directory, and the default metadata table name.
+- A freshly generated skeleton with installed dependencies can run `vendor/bin/tusk list`, `vendor/bin/tusk migrate:status`, and `vendor/bin/tusk make:migration` without a preceding `tusk build`; these tests also verify Framework commands are registered independently of application commands and that command-name collisions fail clearly.
+- Existing application-defined commands remain available through the compiled registry after `tusk build`; Framework catalog registration neither replaces nor shadows them.
+- Framework CLI integration tests exercise the installed/generated-project path, not only the Framework monorepo where source scanning can accidentally expose Framework commands.
 - SQLite integration tests cover: empty/nonexistent database and no migrations; pending status without creating a SQLite file or metadata table; generated pending migration; successful apply and recorded version; repeated apply without duplicate execution; dry-run/SQL export without schema or history changes; failing migration with non-zero exit and no credential disclosure; and rollback to an explicit target with the required safeguards.
 - Tests prove production `migrate` refuses without `--allow-production`, production rollback additionally refuses without `--allow-down`, and `schema:sync` refuses production even with `--force`.
 - Irreversible migration failures are reported without pretending that rollback succeeded.
 - `make:entity`, CLI help, generated skeleton documentation, README, and deployment guidance consistently distinguish `make:migration`, `migrate`, `migrate:status`, `migrate:rollback`, and local-only `schema:sync`.
 - Existing Doctrine integration tests remain valid; no migration work is added to Engine or RoadRunner process lifecycle.
+- The Engine smoke/integration coverage confirms its existing forwarding path reaches Framework commands without adding migration-specific Engine behavior.
 
 ## Official references
 
