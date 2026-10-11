@@ -56,6 +56,22 @@ test('release lookup includes drafts and all pages; duplicate releases fail clos
   duplicate = true;
   await assert.rejects(() => io.state({ tag: 'v0.3.2' }), /duplicate/i);
 });
+test('release creation returns the GitHub draft resource for read-after-write recovery', async () => {
+  const { createGithubIO } = await cli();
+  const created = { id: 99, tag_name: 'v1.0.0', target_commitish: sha, draft: true, prerelease: false };
+  let requestBody;
+  const io = createGithubIO({ env, run(command, args, options = {}) {
+    if (command === 'gh' && args[0] === 'api') {
+      requestBody = JSON.parse(options.input);
+      return JSON.stringify(created);
+    }
+    return '';
+  } });
+  const result = await io.createRelease({ tag: 'v1.0.0', version: '1.0.0', commit: sha, notes: 'release notes' });
+  assert.deepEqual(result, created);
+  assert.deepEqual(requestBody, { tag_name: 'v1.0.0', target_commitish: sha, name: 'v1.0.0',
+    body: 'release notes', draft: true, prerelease: false });
+});
 test('tag writing pushes only the exact tag, without force or main updates', async () => {
   const { createGithubIO } = await cli();
   const calls = [];

@@ -58,15 +58,29 @@ test('unrelated assets are retained without uploading or replacing them', async 
 async function orchestration() { return import('../scripts/publish-release.mjs'); }
 
 // API writes and provenance lookup are external boundaries; the state machine is real.
-function api({ release = null, tagCommit = commit, provenance = true } = {}) {
+function api({ release = null, tagCommit = commit, provenance = true, staleReadsAfterCreate = 0 } = {}) {
   const writes = [];
   let checks = 0;
+  let createCount = 0;
+  let staleReads = 0;
   return {
     writes,
     async guard() { checks++; },
-    async state() { return { actualTagCommit: tagCommit, release }; },
+    async state() {
+      if (staleReads > 0) {
+        staleReads--;
+        return { actualTagCommit: tagCommit, release: null };
+      }
+      return { actualTagCommit: tagCommit, release };
+    },
     async verifyProvenance() { if (!provenance) throw new Error('Missing provenance'); },
-    async createRelease() { writes.push('create'); release = { id: 1, draft: true, assets: [] }; },
+    async createRelease(candidate) {
+      writes.push('create');
+      createCount++;
+      release = { id: createCount, tag_name: candidate.tag, draft: true, assets: [] };
+      if (createCount === 1) staleReads = staleReadsAfterCreate;
+      return release;
+    },
     async uploadAsset(candidate, asset) { writes.push(`upload:${asset.name}`); release.assets.push(asset); },
     async publishDraft() { writes.push('publish'); release.draft = false; },
     get checks() { return checks; },
@@ -87,6 +101,12 @@ test('publisher completes an interrupted draft without duplicating its archive',
   const io = api({ release: { id: 1, draft: true, assets: [archive] } });
   await (await orchestration()).finishRelease(candidate, io);
   assert.deepEqual(io.writes, [`upload:${checksum.name}`, 'publish']);
+});
+test('publisher does not create a duplicate when the release lookup is stale after creation', async () => {
+  const io = api({ staleReadsAfterCreate: 1 });
+  await (await orchestration()).finishRelease(candidate, io);
+  assert.equal(io.writes.filter((write) => write === 'create').length, 1);
+  assert.deepEqual(io.writes, ['create', `upload:${archive.name}`, `upload:${checksum.name}`, 'publish']);
 });
 test('no release or upload writes are allowed without verifiable provenance', async () => {
   const io = api({ provenance: false });
