@@ -4,7 +4,7 @@ This repository publishes the Composer package `tusk-framework/framework` from G
 releases. PHP and Composer remain the framework runtime; Node.js 24 is used only
 by CI to analyze Conventional Commits and run release-tool tests.
 
-## One-time Packagist setup
+## Packagist integration
 
 After the release-automation PR is merged:
 
@@ -15,34 +15,54 @@ After the release-automation PR is merged:
 3. Keep any Packagist token in Packagist/GitHub settings only. The GitHub release
    workflow does not need a Packagist secret; synchronization is webhook-driven.
 
-Do not start the initial release until Packagist recognizes the package and
-the default branch is protected with required checks `validate`, `test (8.2)`,
-`test (8.3)`, and `test (8.4)`.
+The package is registered and Packagist currently indexes `v1.0.0`. The
+one-time registration and webhook setup were completed for the first
+publication. Ordinary releases do not require a Packagist secret or a manual
+version selection.
 
-## First release: `v0.3.2`
+## Release history
 
-The first `main` push after installation of this workflow does not infer a
-version from untagged history. Once Packagist is ready, open GitHub Actions →
-CI → **Run workflow**, select branch `main`, and select version `0.3.2`.
-Dispatch reruns validation and the PHP matrix. It refuses a stale/non-main SHA,
-an existing stable tag, or any version other than `0.3.2`.
+The guarded bootstrap published `v0.3.2` as the first Packagist package. The
+Framework's first stable API line began with `v1.0.0`, published automatically
+from `main` after the breaking removal of the unused declarative HTTP client.
+Both releases were produced by GitHub Actions; neither tag should be recreated
+or moved manually. The old one-time `0.3.2` bootstrap is no longer applicable.
 
-On success, CI creates immutable tag `v0.3.2`, a GitHub Release, a deterministic
-source archive and SHA-256 checksum, and GitHub Actions provenance attestations
-for both files. Verify the package from a clean application checkout:
+## Stable API and compatibility policy
 
-```sh
-composer show tusk-framework/framework --all
-composer require 'tusk-framework/framework:^0.3.2'
-```
+`v1.0.0` starts the Framework's stable API line. Stability is a compatibility
+commitment, not a claim that the Framework has feature parity with other
+frameworks or that every optional capability is complete.
 
-The application repository's dependency workflow should then pass using the
-Packagist package rather than a local path repository.
+The public contract includes APIs documented in the Framework documentation
+and README, application bootstrap and lifecycle contracts, PHP interfaces,
+attributes and extension points explicitly presented for application use,
+documented CLI commands and options, configuration keys and semantics, and the
+generated application skeleton contract. Internal implementation details that
+are not documented or exposed as extension points are not compatibility
+guarantees.
 
-## Later versions
+- Backward-compatible bug fixes and security fixes are patch releases.
+- Backward-compatible public functionality is released in a minor version.
+- Incompatible changes to the public contract require a major version.
+- Before removing or changing a public contract, mark it deprecated in a minor
+  release, document its replacement and migration, and remove it only in a
+  subsequent major release. Security fixes may require an exception, which
+  must be called out in the release notes.
+- The CI release workflow selects the next patch, minor, or major version from
+  Conventional Commits. A `fix:` selects patch, `feat:` selects minor, and a
+  breaking marker (`!` or `BREAKING CHANGE:`) selects major. Documentation-only
+  and other non-release commits do not publish a version.
 
-Only successful pushes to `main` can publish. Release calculation starts after
-`v0.3.2` exists and follows these rules:
+The supported PHP matrix and release checks are defined by the CI workflow.
+Every release must pass validation and all supported PHP jobs before CI creates
+the tag, archive, checksum, provenance attestations, and GitHub Release.
+
+## Automatic version selection
+
+Successful pushes to `main` publish when Conventional Commits contain a
+release-worthy change. The workflow calculates the next version from the
+latest stable release (currently `v1.0.0`) using these rules:
 
 | Commit | Version change |
 | --- | --- |
@@ -83,20 +103,23 @@ The checksum file contains the SHA-256 digest of the archive. Verify it with
 
 ## Interrupted publication and recovery
 
-If the initial dispatch stops before creating `v0.3.2`, fix the cause and run
-the guarded `0.3.2` dispatch again. If it stops after creating the tag, rerun
-the dispatch against the same `main` SHA; the preflight recovers only the
-existing `v0.3.2` tag when it points to that exact SHA. A different SHA or
-another pre-existing stable tag is not a bootstrap retry and fails closed.
+For current releases, rerun the failed CI release job against the same source
+commit; recovery verifies the existing tag, archive, checksum and provenance
+before completing only missing release objects. Do not manually create, move,
+or delete a published tag to retry a release.
 
-For later releases, the next successful `main` workflow inspects the latest
-stable tag/release before calculating another version. A missing stable tag
-means the preflight is a no-op and normal bootstrap/version selection proceeds;
-it does not create a recovery manifest. When an interrupted publication is
-found, recovery rebuilds the archive from the tagged commit, verifies its
-existing provenance, checks GitHub's asset digests, and creates/uploads only
-missing release objects. A tag/SHA mismatch, duplicate release, or conflicting
-asset digest fails closed and requires maintainer investigation before retrying.
+The automatic path requires the historical `v0.3.2` bootstrap tag to exist. If
+that tag is absent, a normal `main` push plans no release; do not assume it will
+bootstrap automatically. The remaining `workflow_dispatch` input accepts only
+`0.3.2` and exists solely for the guarded first-publication bootstrap, not for
+choosing current versions. If the bootstrap tag is unexpectedly absent, inspect
+the complete tag/release history and resolve it deliberately before retrying.
+
+When an interrupted publication is found, recovery rebuilds the archive from
+the tagged commit, verifies its existing provenance, checks GitHub's asset
+digests, and creates/uploads only missing release objects. A tag/SHA mismatch,
+duplicate release, or conflicting asset digest fails closed and requires
+maintainer investigation before retrying.
 
 Packagist synchronization is independent of GitHub publication. If a valid
 GitHub release exists but Packagist has not indexed its tag, inspect the
