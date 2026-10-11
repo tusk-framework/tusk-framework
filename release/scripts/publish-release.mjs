@@ -61,12 +61,21 @@ function recovery(candidate, state) {
 export async function finishRelease(candidate, io) {
   await io.guard(candidate);
   await io.verifyProvenance(candidate);
+  let createdRelease = null;
   for (let attempt = 0; attempt < candidate.assets.length + 3; attempt++) {
     await io.guard(candidate);
-    const state = await io.state(candidate);
+    const observedState = await io.state(candidate);
+    const state = observedState.release || !createdRelease
+      ? observedState
+      : { ...observedState, release: createdRelease };
     const decision = recovery(candidate, state);
-    if (decision.action === 'create-release') await io.createRelease(candidate);
-    else if (decision.missingAssets.length) await io.uploadAsset(candidate, decision.missingAssets[0], state.release);
+    if (decision.action === 'create-release') {
+      const release = await io.createRelease(candidate);
+      if (!Number.isInteger(release?.id) || release.tag_name !== candidate.tag || release.draft !== true) {
+        throw new Error('GitHub did not return the expected draft release resource.');
+      }
+      createdRelease = { ...release, assets: Array.isArray(release.assets) ? release.assets : [] };
+    } else if (decision.missingAssets.length) await io.uploadAsset(candidate, decision.missingAssets[0], state.release);
     else if (state.release.draft) await io.publishDraft(candidate, state.release);
     else return { action: 'complete' };
   }

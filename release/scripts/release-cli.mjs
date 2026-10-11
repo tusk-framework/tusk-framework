@@ -82,9 +82,9 @@ export function createGithubIO({ env = process.env, run = runCommand } = {}) {
       git('push', 'origin', `refs/tags/${candidate.tag}:refs/tags/${candidate.tag}`);
     },
     async createRelease(candidate) {
-      request(endpoint, 'POST', { tag_name: candidate.tag, target_commitish: candidate.commit,
+      return JSON.parse(request(endpoint, 'POST', { tag_name: candidate.tag, target_commitish: candidate.commit,
         name: candidate.tag, body: candidate.notes ?? `Framework ${candidate.version}\n\nSource commit: ${candidate.commit}`,
-        draft: true, prerelease: false });
+        draft: true, prerelease: false }));
     },
     async uploadAsset(candidate, asset, release) {
       // gh release upload uses GitHub's dedicated uploads host and rejects an
